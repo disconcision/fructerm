@@ -1,0 +1,28 @@
+#lang racket
+
+// goal: run-time specifiable term rewriting rules
+
+// pattern forms from racket pattern matching that i use:
+// list
+// literal, var
+// ...
+// quasiquote, unquote
+// splicing-unquote
+// app, ?
+// and, or, not
+
+
+// patterns i want to add:
+// ...-style splicing unquote
+// containment-singleton
+// containment-list
+// containment-tree
+// locality anchor
+
+
+// annotation patterns
+
+
+metafunctionality
+
+// function to automatically left-right reverse a rewrite rule
