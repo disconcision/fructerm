@@ -18,6 +18,13 @@
 ; and, or, not
 
 
+
+(define ((fructerm pattern-templates) target)
+  (match-let ([`(,pattern ,template) (first pattern-templates)]
+              )
+    0
+    ))
+
 ; patterns i want to add;
 ; ...-style splicing unquote
 ; containment-singleton
@@ -25,6 +32,11 @@
 ; containment-tree
 ; locality anchor
 
+#;(module+ test
+    (require rackunit)
+    (check-equal? ((fructerm '(`a 4) ) 'a)
+                  4)
+    (check-equal?))
 
 ; annotation patterns
 
