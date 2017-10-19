@@ -23,14 +23,17 @@
   (match-let ([`(,pattern ,template) (first pattern-templates)]
               )
     (define environment (destructure pattern target))
-    (if 'match
-        'match
+    (if environment
+        (restructure template environment)
         ((fructerm (rest pattern-templates)) target))
     ))
 
 (define (destructure pattern target)
   (cond [(and (list? pattern) (list? target)) (map destructure pattern target)]
         ))
+
+(define (restructure template environment)
+  0)
 
 ; patterns i want to add;
 ; ...-style splicing unquote
@@ -115,7 +118,7 @@
                   `(▹ (+ 1 2)))
     (check-equal? ((fructerm '???) [((▹ ,(? form-name? a)) ,x ...) ⋱↦ (c▹ (c▹▹ ,empty-symbol) (,a ,@x))])
                   
-     0)
+                  0)
     (check-equal?
      
      0)
