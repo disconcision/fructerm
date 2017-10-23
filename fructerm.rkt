@@ -37,9 +37,22 @@
 (define literal?
   (disjoin number?
            boolean?
-           (λ? (list 'quote (? symbol?)))
-           (λ? (list 'quasiquote (? symbol?)))
+           #;(λ? (list 'quote (? symbol?)))
+           #;(λ? (list 'quasiquote (? symbol?)))
            #;(match-lambda [(quote (? literal?)) #true] [_ #false])))
+
+(define (flatten-unless-binding ls)
+  (match ls
+    ["error" '("error")]
+    [`(,(and a (not (? list?)) (not "error")) ,(and b (not (? list?)) (not "error"))) `((,a ,b))]
+    [(? list?) (apply append (map flatten-unless-binding ls))]))
+
+(define (collate results)
+  (let ([flat-results (flatten-unless-binding results)])
+    (if (empty? (filter (λ? "error") flat-results))
+        flat-results
+        "error")))
+
 
 (define (destructure pattern target [quote-level 0])
   (cond [#t #;(equal? quote-level 0)
@@ -50,60 +63,60 @@
             (match* (pattern target)
               
               [((? literal?) (== pattern))
+               (displayln "plain literal match case")
                `()]
-              [((? literal?) (not (== pattern)))
-               "err"]
-              [((? symbol?) _)
-               `(,pattern ,target)]
-
-              [((list 'quote (? list? ps)) (list 'quote (? list? ts)))
-               (displayln "dequote case")
-               (map (λ (x y) (destructure (list 'quote x) (list 'quote y))) ps ts)]
-           
-              [((list 'quasiquote (? list? ps)) _)
-               (displayln "666")
-               (map (λ (x y) (destructure x y (add1 quote-level))) ps target)]
-
-              [((list 'quote a) _)
-               (destructure a target 99)]
               
+              #; [((? literal?) (not (== pattern)))
+                  (displayln "plain literal no-match case")
+                  "error"]
+
+              [((? symbol?) (== pattern))
+               #:when (> quote-level 0)
+               (displayln "symbol literal success case")
+               '()]
+              
+              [((? symbol?) (not (? symbol?)))
+               ;does second clause make sense? can't bind a bare symbol
+               #:when (equal? quote-level 0)
+               (displayln "symbol identifier bind case")
+               `((,pattern ,target))]
+             
               [((list 'quasiquote a) _)
+               (displayln "quasiquote non-list case")
                (destructure a target (add1 quote-level))]
            
               [((list 'unquote a) _)
                #:when (> quote-level 0)
-               (displayln "UNQUOTE DETECTED")
+               (displayln "unquote case")
                (destructure a target (sub1 quote-level))]
 
+              [((list 'quote (? list? ps)) (list 'quote (? list? ts)))
+               (displayln "quote list case")
+               (collate (map (curryr destructure +inf.0) ps ts))]
 
-              [((and (? symbol?)) (== pattern))
-               #:when (< 0 quote-level)
-               (displayln "quote over 0 case")
-               #;(bind pattern environment)
-               `()]
-
-              [((and (? symbol?)) (not (== pattern)))
-               #:when (< 0 quote-level)
-               (displayln pattern)
-               (displayln target)
-               (displayln "quote over 0 case error no match")]
-
-
-
-              #;[((? list?) (? list?))
-                 #:when (equal? (length pattern) (length target))
-                 (displayln "list case")
-                 (map destructure pattern target)]
+              [((list 'quasiquote (? list? ps)) _)
+               #:when (equal? (length ps) (length target))
+               (displayln "quasiquoted list case")
+               (collate (map (curryr destructure (add1 quote-level)) ps target))]
+              
+              [((? list?) (? list?))
+               #:when (and (equal? (length pattern) (length target))
+                           (> quote-level 0))
+               (displayln "list case")
+               (collate (map (curryr destructure quote-level) pattern target))]
            
-              [(_ _) (displayln "no magtch or error")])]
-        [(< 0 quote-level)
-         (cond)]
-        [(> 0 quote-level)
-         (displayln "no match or error")]))
-#; (check-equal? `(destructure 'a 4)
-                 `())
+              [(_ _)
+               (displayln "fallthrough no match")
+               "error"])]
+        #; [(< 0 quote-level)
+            (cond)]
+        #; [(> 0 quote-level)
+            (displayln "no match or error")]))
+
+
 (define (restructure template environment)
   0)
+
 
 ; patterns i want to add;
 ; ...-style splicing unquote
@@ -220,31 +233,87 @@
   #;(check-equal? ((fructerm '???) [((▹ ,(? form-name? a)) ,x ...) ⋱↦ (c▹ (c▹▹ ,empty-symbol) (,a ,@x))])
                   
                   0)
+
+
+
+  (check-equal? (flatten-unless-binding '(a 2))
+                '((a 2)))
+  (check-equal? (flatten-unless-binding '((a 2)))
+                '((a 2)))
+  (check-equal? (flatten-unless-binding '((a 2) (b 3)))
+                '((a 2) (b 3)))
+  (check-equal? (flatten-unless-binding '((a 2) ((b 3))))
+                '((a 2) (b 3)))
+  (check-equal? (flatten-unless-binding '((a 2) ((b 3) (c 4) ((d 5) "error"))))
+                '((a 2) (b 3) (c 4) (d 5) "error"))
+
+  
   
   (check-equal? (destructure 1 1)
                 '())
+  (check-equal? (destructure '1 '1)
+                '())
+  (check-equal? (destructure 'a 'a)
+                "error")
+  ; does above make sense? logic: can't bind a bare symbol
+  ; instead we should do:
+  (check-equal? (destructure 'a ''a)
+                '((a 'a)))
   (check-equal? (destructure 'a 4)
-                `(a 4))
+                '((a 4)))
   (check-equal? (destructure ''a 4)
-                "err")
+                "error")
+  (check-equal? (destructure '`(1) '(1))
+                '())
+  (check-equal? (destructure '`(,1) '(1))
+                '())
+  (check-equal? (destructure '`(,a) '(1))
+                '((a 1)))
+  (check-equal? (destructure '`(a) '(1))
+                "error")
+  (check-equal? (destructure '`,a '(1))
+                `((a (1))))
+  (check-equal? (destructure 'a '(1))
+                `((a (1))))
   (check-equal? (destructure '`(,a ,b) '(1 2))
-                `((a 1) (b 2)))
-  (check-equal? (destructure '(,a ,b) '(1 2))
-                "no match")
+                '((a 1) (b 2)))
   (check-equal? (destructure '(a b) '(1 2))
-                "err")
+                "error")
+  (check-equal? (destructure '`(1 ,b) '(1 2))
+                '((b 2)))
+  (check-equal? (destructure '`(a ,b) '(a 2))
+                '((b 2)))
+  (check-equal? (destructure '`(a ,b) '(1 2))
+                "error")
+  (check-equal? (destructure '`(1 2) '(1 2))
+                '())
+  (check-equal? (destructure '`(,a ,b ,c) '(1 2 3))
+                '((a 1) (b 2) (c 3)))
+  (check-equal? (destructure '`(,a (,b)) '(1 (2)))
+                '((a 1) (b 2)))
+  (check-equal? (destructure '`(,a ,b) '(1 2 3))
+                "error")
+  (check-equal? (destructure '`(,a ,b ,c) '(1 2))
+                "error")
+  (check-equal? (destructure '(,a ,b) '(1 2))
+                "error")
   (check-equal? (destructure ''(a b) ''(1 2))
-                "err")
+                "error")
   (check-equal? (destructure ''(a b) ''(a b))
-                '(()()))
-  
-  (check-equal? (destructure '(1 1) '(1 1)) '(()()))
-  (check-equal? 0
-     
-                0)
-    
-    
+                '())
+  ; logic of below: target is just (1 1); not valid
+  (check-equal? (destructure '(1 1) '(1 1))
+                "error")
+  (check-equal? (destructure ''(1 1) ''(1 1))
+                '())
+  (check-equal? (destructure '`(1 `(2 ,a ,,b)) '(1 (2 a 7)))
+                '((b 7)))
+  ; why is below an error? does qq not nest the way i think?
+  #; (match '(1 (2 a 7))
+       [`(1 `(2 ,a ,,b)) b]) 
   )
+
+
 
 ; annotation patterns
 
