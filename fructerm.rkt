@@ -37,9 +37,7 @@
 (define literal?
   (disjoin number?
            boolean?
-           #;(λ? (list 'quote (? symbol?)))
-           #;(λ? (list 'quasiquote (? symbol?)))
-           #;(match-lambda [(quote (? literal?)) #true] [_ #false])))
+           ))
 
 (define (flatten-unless-binding ls)
   (match ls
@@ -55,63 +53,53 @@
 
 
 (define (destructure pattern target [quote-level 0])
-  (cond [#t #;(equal? quote-level 0)
-            (displayln "destructuring:")
-            (displayln pattern)
-            (displayln target)
-            (displayln quote-level)
-            (match* (pattern target)
+  (displayln "destructuring:")
+  (displayln pattern)
+  (displayln target)
+  (displayln quote-level)
+  (match* (pattern target)
               
-              [((? literal?) (== pattern))
-               (displayln "plain literal match case")
-               `()]
-              
-              #; [((? literal?) (not (== pattern)))
-                  (displayln "plain literal no-match case")
-                  "error"]
+    [((? literal?) (== pattern))
+     (displayln "plain literal match case")
+     `()]
 
-              [((? symbol?) (== pattern))
-               #:when (> quote-level 0)
-               (displayln "symbol literal success case")
-               '()]
+    [((? symbol?) (== pattern))
+     #:when (> quote-level 0)
+     (displayln "symbol literal success case")
+     '()]
               
-              [((? symbol?) (not (? symbol?)))
-               ;does second clause make sense? can't bind a bare symbol
-               #:when (equal? quote-level 0)
-               (displayln "symbol identifier bind case")
-               `((,pattern ,target))]
+    [((? symbol?) (not (? symbol?)))
+     ;does second clause make sense? can't bind a bare symbol
+     #:when (equal? quote-level 0)
+     (displayln "symbol identifier bind case")
+     `((,pattern ,target))]
              
-              [((list 'quasiquote a) _)
-               (displayln "quasiquote non-list case")
-               (destructure a target (add1 quote-level))]
+    [((list 'quasiquote a) _)
+     (displayln "quasiquote case")
+     (destructure a target (add1 quote-level))]
            
-              [((list 'unquote a) _)
-               #:when (> quote-level 0)
-               (displayln "unquote case")
-               (destructure a target (sub1 quote-level))]
+    [((list 'unquote a) _)
+     #:when (> quote-level 0)
+     (displayln "unquote case")
+     (destructure a target (sub1 quote-level))]
 
-              [((list 'quote (? list? ps)) (list 'quote (? list? ts)))
-               (displayln "quote list case")
-               (collate (map (curryr destructure +inf.0) ps ts))]
-
-              [((list 'quasiquote (? list? ps)) _)
-               #:when (equal? (length ps) (length target))
-               (displayln "quasiquoted list case")
-               (collate (map (curryr destructure (add1 quote-level)) ps target))]
+    [((list 'quote (? list? ps)) (list 'quote (? list? ts)))
+     (displayln "quote list case")
+     (collate (map (curryr destructure +inf.0) ps ts))]
               
-              [((? list?) (? list?))
-               #:when (and (equal? (length pattern) (length target))
-                           (> quote-level 0))
-               (displayln "list case")
-               (collate (map (curryr destructure quote-level) pattern target))]
+    [((? list?) (? list?))
+     #:when (and (equal? (length pattern) (length target))
+                 (> quote-level 0))
+     (displayln "list case")
+     (collate (map (curryr destructure quote-level) pattern target))]
+
+    #; [((? literal?) (not (== pattern)))
+        (displayln "plain literal no-match case")
+        "error"]
            
-              [(_ _)
-               (displayln "fallthrough no match")
-               "error"])]
-        #; [(< 0 quote-level)
-            (cond)]
-        #; [(> 0 quote-level)
-            (displayln "no match or error")]))
+    [(_ _)
+     (displayln "fallthrough no match")
+     "error"]))
 
 
 (define (restructure template environment)
@@ -296,6 +284,8 @@
   (check-equal? (destructure '`(,a ,b ,c) '(1 2))
                 "error")
   (check-equal? (destructure '(,a ,b) '(1 2))
+                "error")
+  (check-equal? (destructure '(,a ,b) ''(1 2))
                 "error")
   (check-equal? (destructure ''(a b) ''(1 2))
                 "error")
