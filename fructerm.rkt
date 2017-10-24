@@ -83,9 +83,15 @@
      (displayln "unquote case")
      (destructure a target (sub1 quote-level))]
 
-    [((list 'quote (? list? ps)) (list 'quote (? list? ts)))
-     (displayln "quote list case")
-     (collate (map (curryr destructure +inf.0) ps ts))]
+    [((list 'quote a) _)
+     (displayln "quote case")
+     (destructure a target +inf.0)]
+    ; need to make this symmetric in target like below
+    ; all the time? sometimes?
+
+    #;[((list 'quote (? list? ps)) (? list? ts))
+       (displayln "quote list case")
+       (collate (map (curryr destructure +inf.0) ps ts))]
               
     [((? list?) (? list?))
      #:when (and (equal? (length pattern) (length target))
@@ -289,18 +295,55 @@
                 "error")
   (check-equal? (destructure ''(a b) ''(1 2))
                 "error")
-  (check-equal? (destructure ''(a b) ''(a b))
+  (check-equal? (destructure ''(a b) '(a b))
                 '())
   ; logic of below: target is just (1 1); not valid
   (check-equal? (destructure '(1 1) '(1 1))
                 "error")
-  (check-equal? (destructure ''(1 1) ''(1 1))
+  (check-equal? (destructure ''(1 1) '(1 1))
                 '())
   (check-equal? (destructure '`(1 `(2 ,a ,,b)) '(1 (2 a 7)))
                 '((b 7)))
   ; why is below an error? does qq not nest the way i think?
   #; (match '(1 (2 a 7))
-       [`(1 `(2 ,a ,,b)) b]) 
+       [`(1 `(2 ,a ,,b)) b])
+  (check-equal? (destructure '`(1 `(2 ,a ,,,b)) '(1 (2 a 7)))
+                "error")
+
+
+  (check-equal? (restructure '1 '())
+                1)
+  (check-equal? (restructure ''(1 1) '())
+                '(1 1))
+  (check-equal? (restructure 'a '((a 1)))
+                1)
+  (check-equal? (restructure 'a '())
+                "error")
+  (check-equal? (restructure 'a '((b 1)))
+                "error")
+  (check-equal? (restructure '(a) '((a 1)))
+                "error")
+  (check-equal? (restructure ''(a) '((a 1)))
+                '(a))
+  (check-equal? (restructure '`(a) '((a 1)))
+                '(a))
+  (check-equal? (restructure '(,a) '((a 1)))
+                "error")
+  (check-equal? (restructure '`(,a) '((a 1)))
+                '(1))
+  (check-equal? (restructure '`(,a a) '((a 1)))
+                '(1 a))
+  (check-equal? (restructure '`(,a ,a) '((a 1)))
+                '(1 1))
+  (check-equal? (restructure '`(,a ,b) '((a 1)))
+                "error")
+  (check-equal? (restructure '`(,a ,b) '((b 2) (a 1)))
+                '(1 2))
+  (check-equal? (restructure '`(,a (,b ,c (,b))) '((a 1) (b 2) (c 3)))
+                '(1 (2 3 (1))))
+  (check-equal? (restructure '`(,a `(,b ,,c `(,,,b ,c))) '((a 1) (b 2) (c 3)))
+                '(1 (2 3 (1))))
+   
   )
 
 
