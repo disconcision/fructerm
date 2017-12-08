@@ -51,6 +51,22 @@
         flat-results
         "error")))
 
+(define atom? (compose not pair?))
+(define proper-list? (conjoin list? (compose not empty?)))
+; pre-applies fn into source tree
+(define (map-rec fn source) 
+  (match (fn source)
+    [(? list? ls) (map (curry map-rec fn) ls)]
+    [(? atom? a) a]))
+; desugars _ ... into (ooo _)
+(define/match (undotdotdot source)
+  [((list a ... b '... c ...)) `(,@(undotdotdot a) (ooo ,b) ,@c)]
+  [(_) source])
+; resugars (ooo _) into _ ...
+(define/match (redotdotdot source)
+  [(`(,a ... (ooo ,b) ,c ...)) `(,@(redotdotdot a) ,b ... ,@c)]
+  [(_) source])
+
 
 (define (destructure pattern target [quote-level 0])
   (displayln "destructuring:")
@@ -58,6 +74,11 @@
   (displayln target)
   (displayln quote-level)
   (match* (pattern target)
+
+    ; (1 ... 2) -> ((ooo 1) 2)
+    [((list (list 'ooo pat) other) _)
+     (displayln "confusing")
+     (displayln "resume work here")]
               
     [((? literal?) (== pattern))
      (displayln "plain literal match case")
@@ -310,39 +331,133 @@
   (check-equal? (destructure '`(1 `(2 ,a ,,,b)) '(1 (2 a 7)))
                 "error")
 
+  (check-equal? (destructure '... '(1 2 3))
+                "error") ; is bare ellipses just an error?
+  (check-equal? (destructure '`(...) '(1 2 3))
+                "error")
+  (check-equal? (destructure '`(... ...) '(1 2 3))
+                "error")
+  (check-equal? (destructure '`(a ... ...) '(1 2 3))
+                "dunno????")
 
-  (check-equal? (restructure '1 '())
-                1)
-  (check-equal? (restructure ''(1 1) '())
-                '(1 1))
-  (check-equal? (restructure 'a '((a 1)))
-                1)
-  (check-equal? (restructure 'a '())
+  
+  (check-equal? (destructure '`(... 3) '(1 2 3))
                 "error")
-  (check-equal? (restructure 'a '((b 1)))
+  (check-equal? (destructure '`(1 ... ...) '())
+                "dunno bout this case")
+  (check-equal? (destructure '`(1 ...) '())
+                '())
+  (check-equal? (destructure '`(1 ...) '(1))
+                '())
+  (check-equal? (destructure '`(1 ...) '(1 1 1))
+                '())
+  (check-equal? (destructure '`(1 ... 2) '(1 1))
+                '())
+  (check-equal? (destructure '`(1 ... 2 ...) '(1 1 2 2 2))
+                '())
+
+  
+  (check-equal? (destructure '`(... ,a) '(1 2 3))
                 "error")
-  (check-equal? (restructure '(a) '((a 1)))
+  (check-equal? (destructure '`(a ...) '`(a ...))
+                `())
+  (check-equal? (destructure '`(,a ...) '1)
                 "error")
-  (check-equal? (restructure ''(a) '((a 1)))
-                '(a))
-  (check-equal? (restructure '`(a) '((a 1)))
-                '(a))
-  (check-equal? (restructure '(,a) '((a 1)))
+  (check-equal? (destructure '`(,a ...) '())
+                '(())) ; is this right??
+  (check-equal? (destructure '`(,a ...) '(1))
+                '((a (1))))
+  (check-equal? (destructure '`(,a ...) '(1 2 3))
+                '(a (1 2 3)))
+  (check-equal? (destructure '`(1 ,a ...) '(1 2 3))
+                '(a (2 3)))
+  (check-equal? (destructure '`(1 ,a ... 3) '(1 2 3))
+                '(a (2)))
+  (check-equal? (destructure '`(1 ,a ... 3) '(1 3))
+                '())
+  (check-equal? (destructure '`(,a ... 3) '(1 2 3))
+                '(a (1 2)))
+
+  
+  (check-equal? (destructure '`(,a ,b ...) '(1 2 3))
+                '((a (1)) (b (2 3))))
+  (check-equal? (destructure '`(,a ,b ...) '(1))
+                '((a (1)) (b '())))
+  (check-equal? (destructure '`(,a ... ,b) '(1 2 3))
+                '((a (1 2)) (b (3))))
+  (check-equal? (destructure '`(,a ... ,b ...) '(1 2 3))
                 "error")
-  (check-equal? (restructure '`(,a) '((a 1)))
-                '(1))
-  (check-equal? (restructure '`(,a a) '((a 1)))
-                '(1 a))
-  (check-equal? (restructure '`(,a ,a) '((a 1)))
-                '(1 1))
-  (check-equal? (restructure '`(,a ,b) '((a 1)))
+  (check-equal? (destructure '`(,a ... ,b ...) '())
+                "dunno")
+  (check-equal? (destructure '`(,a ... 3 ,b ...) '(1 2 3))
+                '((a '(1 2)) (b '())))
+
+  
+  (check-equal? (destructure '`(() ...) '(1 2 3))
+                "dunno bout this")
+  (check-equal? (destructure '`((1) ...) '(1 2 3))
+                "dunno bout this")
+  (check-equal? (destructure '`((,a) ...) '((1) (2) (3)))
+                '((a (1 2 3))))
+  (check-equal? (destructure '`((,a 1) ...) '((5 1) (4 1)))
+                '((a (5 4))))
+  (check-equal? (destructure '`((,a b) ...) '((5 1) (4 1)))
+                '((a (5 4)) (b 1 1)))
+
+  (check-equal? (destructure '`((...) ...) '((1)))
                 "error")
-  (check-equal? (restructure '`(,a ,b) '((b 2) (a 1)))
-                '(1 2))
-  (check-equal? (restructure '`(,a (,b ,c (,b))) '((a 1) (b 2) (c 3)))
-                '(1 (2 3 (1))))
-  (check-equal? (restructure '`(,a `(,b ,,c `(,,,b ,c))) '((a 1) (b 2) (c 3)))
-                '(1 (2 3 (1))))
+  (check-equal? (destructure '`((1 ...) ...) '((1 1 1 1) (1)))
+                '()) ; or nested empty sets?
+  (check-equal? (destructure '`((,a ...) ...) '((5 3 1) (4 2)))
+                '((a ((5 3 1) (4 2)))))
+  (check-equal? (destructure '`((,a ...) ...) '((5 3 1) ()))
+                '((a ((5 3 1) ()))))
+  (check-equal? (destructure '`((,a ... 1 ,b ... ) ...) '((5 3 1) (1)))
+                '((a ((5 3) ())) (b (() ()))))
+  
+
+  ; yes: maybe refactor for only one level of qq in pattern?
+
+
+
+
+  #;(restructure:
+     (check-equal? (destructure ''(1 1) '(1 1))
+                   '())
+
+
+     (check-equal? (restructure '1 '())
+                   1)
+     (check-equal? (restructure ''(1 1) '())
+                   '(1 1))
+     (check-equal? (restructure 'a '((a 1)))
+                   1)
+     (check-equal? (restructure 'a '())
+                   "error")
+     (check-equal? (restructure 'a '((b 1)))
+                   "error")
+     (check-equal? (restructure '(a) '((a 1)))
+                   "error")
+     (check-equal? (restructure ''(a) '((a 1)))
+                   '(a))
+     (check-equal? (restructure '`(a) '((a 1)))
+                   '(a))
+     (check-equal? (restructure '(,a) '((a 1)))
+                   "error")
+     (check-equal? (restructure '`(,a) '((a 1)))
+                   '(1))
+     (check-equal? (restructure '`(,a a) '((a 1)))
+                   '(1 a))
+     (check-equal? (restructure '`(,a ,a) '((a 1)))
+                   '(1 1))
+     (check-equal? (restructure '`(,a ,b) '((a 1)))
+                   "error")
+     (check-equal? (restructure '`(,a ,b) '((b 2) (a 1)))
+                   '(1 2))
+     (check-equal? (restructure '`(,a (,b ,c (,b))) '((a 1) (b 2) (c 3)))
+                   '(1 (2 3 (1))))
+     (check-equal? (restructure '`(,a `(,b ,,c `(,,,b ,c))) '((a 1) (b 2) (c 3)))
+                   '(1 (2 3 (1)))))
    
   )
 
