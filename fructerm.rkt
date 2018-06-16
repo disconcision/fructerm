@@ -21,24 +21,19 @@ currently implemented:
 
 - ellipses-patterns
 
+- quote (needs more tests)
+
+- quasiquote/unquote (needs tests)
+
 - simple containment patterns
 
 
 to-come:
 
-- quote:
-  add a quote pattern/form.
-  in restructure, it just halts evaluation
-  in destructure, it triggers a datum equality test
-
-- quasiquote/unquote
-  idea 1: adapt the rewriting phase to just
-  rewrite this to quote.
-
 - unquote/splicing?
   not necessary, but for the hell of it?
 
-- wildcards
+- non-binding wildcard
 
 - complex containment patterns
 
@@ -65,9 +60,31 @@ to-come:
 
  i'll also take the opportunity to introduce
  some of the combinators.|# 
-(define (desugar-pattern stx)
-  (define D desugar-pattern)
+(define (desugar-pattern stx [quote-level 0])
+  (define D (curryr desugar-pattern quote-level))
   (match stx
+
+    ; don't parse quoted content
+    [`(quote ,_) stx]
+    [`(quasiquote ,(and x (not (? list?))))
+     `(quote ,x)]
+    [`(quasiquote ,(? list? xs))
+     (D (map (curryr desugar-pattern (add1 quote-level)) xs))]
+    [(and (? symbol?)
+          #;(not 'quote)
+          #;(not 'quasiquote)
+          #;(note 'unquote)
+          (not 'p⋱)
+          (not 'p⋱until)
+          (not 'p...)
+          (not 'pcons))
+     (match quote-level
+       [0 stx]
+       [_ `(quote ,stx)])]
+    [(list 'unquote x)
+     (when (zero? quote-level) (error "bad unquote"))
+     (desugar-pattern x (sub1 quote-level))]
+    
     ; containment patterns
     [`(⋱ ,pat)
      (D `(p⋱ _ ,pat))]
@@ -86,14 +103,16 @@ to-come:
    greedily matches pattern a to the initial
    segments of a list|#
     
-    [`(,(and (not 'p⋱)
+    [`(,(and #;(not 'quote)
+             (not 'p⋱)
              (not 'p⋱until)
              (not 'p...)
              (not 'pcons)) . ,_)
      (D (foldr
          (λ (x acc)
            (match acc
-             [`(,_ ,(== '...) ,wh ...) `(p... ,x ,(first wh))]
+             [`(,_ ,(== '...) ,y ,ys ...)
+              `(p... ,x ,y)]
              [_ `(pcons ,x ,acc)]))
          '() stx))]
 
@@ -106,10 +125,31 @@ to-come:
  similar to above. not sure if this function will
  continue to exist. unsure to this point about
  how much i want to enforce pattern/template
- symmetry. right now it's pretty similar. |#
-(define (desugar-template stx)
-  (define D desugar-pattern)
+ symmetry. right now it's almost identical. |#
+(define (desugar-template stx [quote-level 0])
+  (define D (curryr desugar-pattern quote-level))
   (match stx
+
+    [`(quote ,_) stx]
+    [`(quasiquote ,(and x (not (? list?))))
+     `(quote ,x)]
+    [`(quasiquote ,(? list? xs))
+     (D (map (curryr desugar-pattern (add1 quote-level)) xs))]
+    [(and (? symbol?)
+          #;(not 'quote)
+          #;(not 'quasiquote)
+          #;(note 'unquote)
+          (not 'p⋱)
+          (not 'p⋱until)
+          (not 'p...)
+          (not 'pcons))
+     (match quote-level
+       [0 stx]
+       [_ `(quote ,stx)])]
+    [(list 'unquote x)
+     (when (zero? quote-level) (error "bad unquote"))
+     (desugar-pattern x (sub1 quote-level))]
+    
     [`(,id ⋱ ,pat)
      (D `(p⋱ ,id ,pat))]
     [`(,(and (not 'p⋱)
@@ -120,8 +160,7 @@ to-come:
            (match acc
              [`(,_ ,(== '...) ,y ,ys ...)
               `(p... ,x ,y)]
-             [_
-              `(pcons ,x ,acc)]))
+             [_ `(pcons ,x ,acc)]))
          '() stx))]
     [(? list?) (map D stx)]
     [_ stx]))
@@ -143,19 +182,21 @@ to-come:
 
 
 
-#| helpers for destructuring |#
+; helpers for destructuring
 
-; maybe-style bind to passthrough match failures
+#| bind : maybe-env → (env → maybe-env) → maybe-env
+   passthrough match failures |#
 (define (bind x f)
   (if (equal? 'no-match x)
       'no-match
       (f x)))
 
-; for capturing list variables along folds
+#| append-hashes : hash → hash → hash
+   for incrementally binding lists along folds|#
 (define (append-hashes h1 h2)
   (hash-union
    h1
-   ; must be a better way to do below:
+   ; must be a better way to do this:
    (make-hash (hash-map h2 (λ (k v) (cons k (list v)))))
    #:combine (λ (a b) (append a b))))
 
@@ -180,7 +221,10 @@ to-come:
     [((? literal?) (== pat))
      c-env]
     [((? pattern-variable?) _)
-     (hash-set c-env pat arg)] 
+     (hash-set c-env pat arg)]
+    [(`(quote ,p) _)
+     #:when (equal? p arg)
+     c-env]
     [(`(p⋱ ,cntx-name ,(app (curry D arg) (? hash? new-env)))
       _) ; should this be (? list?) ?
      (hash-union new-env (hash-set c-env cntx-name identity))]
@@ -238,6 +282,7 @@ to-come:
   (match stx
     [(? literal? d) d]
     [(? variable? id) (hash-ref env id)]
+    [`(quote ,d) d]
     [`(pcons ,p ,ps)
      (cons (R p) (R ps))]
     [`(p... ,p ,ps)
@@ -271,13 +316,13 @@ to-come:
 
 
 #| ratch : looks like match but tastes like fructerm |#
-(define-syntax-rule (ratch literals source clauses ...)
-  (runtime-match literals '(clauses ...) source))
+(define-syntax-rule (ratch source clauses ...)
+  (runtime-match #hash() '(clauses ...) source))
 
 
 ; ratch example usage
 (check-equal?
- (ratch #hash() '(let ([a 1] [b 2]) 0)
+ (ratch '(let ([a 1] [b 2]) 0)
    [(form ([id init] ...) body)
     (id ... init ...)])
  (match '(let ([a 1] [b 2]) 0)
@@ -286,19 +331,78 @@ to-come:
 
 
 
-
 #| EXAMPLES & TESTS |#
 
-(module+ tests
+(module+ test
 
   
   ; destructure examples and tests
 
-  (define test-destr
-    (λ (source pattern)
-      (destructure (hash) (hash)
-                   source (desugar-pattern pattern))))
+  (define (test-destr source pattern)
+    (destructure #hash() #hash()
+                 source (desugar-pattern pattern)))
 
+  
+  ; destructure literal/variable tests
+
+  (check-equal? (test-destr 1 1)
+                #hash())
+
+  (check-equal? (test-destr 1 'a)
+                #hash((a . 1)))
+
+  (check-equal? (test-destr 'a 'a)
+                #hash((a . a)))
+
+  
+  ; destructure quote tests
+
+  (check-equal? (test-destr 'a '(quote a))
+                #hash())
+
+  (check-equal? (test-destr '(quote a) 'a)
+                #hash((a . (quote a))))
+
+  (check-equal? (test-destr 'a '(quote b))
+                'no-match)
+
+  (check-equal? (test-destr '(a 1) '((quote a) 1))
+                #hash())
+
+  (check-equal? (test-destr '(a 1) '((quote a) b))
+                #hash((b . 1)))
+
+  (check-equal? (test-destr '(a 1) '(quote (a 1)))
+                #hash())
+
+
+  ; destructure quasiquote/unquote tests
+
+  (check-equal?
+   (ratch '(if 1 2 3)
+     [`(if ,a ,b ,c)
+      `(cond [,a ,b]
+             [else ,c])])
+   (match '(if 1 2 3)
+     [`(if ,a ,b ,c)
+      `(cond [,a ,b]
+             [else ,c])]))
+
+  ;
+  ; FIX BUG
+  #;
+  (check-equal?
+   (ratch  '(if 1 2 3)
+    [`(if ,a ,b ,c)
+     `(cond [`,a ,b]
+            [else ,c])])
+   (match  '(if 1 2 3)
+    [`(if ,a ,b ,c)
+     `(cond [`,a ,b]
+            [else ,c])]))
+  
+
+  
   ; destructure tests for pcons pattern
 
   (check-equal? (test-destr '() '(pcons () anything))
