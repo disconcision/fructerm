@@ -47,7 +47,7 @@ to-come:
 |#
 
 
-
+; rewriting internals
 (provide runtime-match ; literals → pattern-templates → stx → stx
          destructure   ; stx → env
          restructure)  ; env → stx → stx
@@ -55,14 +55,16 @@ to-come:
 ; ratch is a match-like syntactic form
 (provide ratch)
 
-#| desugar-pattern makes pattern combinators
-   more explicit; in particular, it rewrites
-   bare sexprs into pconses, and, if they contain
-   ellipses literals, into pconses & p...es.|# 
 
-#| i'll also take the opportunity to introduce
-   some of the combinators. |#
+#| desugar-pattern : stx → stx
 
+ desugar-pattern makes pattern combinators
+ more explicit; in particular, it rewrites
+ bare sexprs into pconses, and, if they contain
+ ellipses literals, into pconses & p...es.
+
+ i'll also take the opportunity to introduce
+ some of the combinators.|# 
 (define (desugar-pattern stx)
   (define D desugar-pattern)
   (match stx
@@ -100,10 +102,11 @@ to-come:
     [_ stx]))
 
 
-#| similar to above. not sure if this function will
-   continue to exist. unsure to this point about
-   how much i want to enforce pattern/template
-   symmetry. right now it's pretty similar. |#
+#| desugar-template : stx → stx
+ similar to above. not sure if this function will
+ continue to exist. unsure to this point about
+ how much i want to enforce pattern/template
+ symmetry. right now it's pretty similar. |#
 (define (desugar-template stx)
   (define D desugar-pattern)
   (match stx
