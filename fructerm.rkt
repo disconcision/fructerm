@@ -26,9 +26,17 @@ currently implemented:
 
 to-come:
 
-- quote
+- quote:
+  add a quote pattern/form.
+  in restructure, it just halts evaluation
+  in destructure, it triggers a datum equality test
 
 - quasiquote/unquote
+  idea 1: adapt the rewriting phase to just
+  rewrite this to quote.
+
+- unquote/splicing?
+  not necessary, but for the hell of it?
 
 - wildcards
 
