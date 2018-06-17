@@ -69,6 +69,7 @@ to-come:
     [`(quasiquote ,(and x (not (? list?))))
      `(quote ,x)]
     [`(quasiquote ,(? list? xs))
+     #:when (equal? 0 quote-level)
      (D (map (curryr desugar-pattern (add1 quote-level)) xs))]
     [(and (? symbol?)
           #;(not 'quote)
@@ -82,6 +83,7 @@ to-come:
        [0 stx]
        [_ `(quote ,stx)])]
     [(list 'unquote x)
+     ; #:when (quote-level . = . 1)
      (when (zero? quote-level) (error "bad unquote"))
      (desugar-pattern x (sub1 quote-level))]
     
@@ -120,6 +122,80 @@ to-come:
     [(? list?) (map D stx)]
     [_ stx]))
 
+(define (apply-expr f stx)
+  (match stx
+  
+    #;[`(quasiquote ,x) 0]
+    #;[(list 'unquote x) 0]
+
+    [`(quote ,p)
+     `(quote ,(f p))]
+    [`(pcons ,p ,ps)
+     `(pcons ,(f p) ,(f ps))]
+    [`(p... ,p ,ps)
+     `(p... ,(f p) ,(f ps))]
+    [`(p⋱ ,(? symbol? id) ,arg)
+     `(p⋱ ,id ,(f arg))]
+    
+    [(? symbol?) stx]
+    [(or (? number?) (? empty?)) stx]
+    [(? list?) (map f stx)])
+  )
+
+
+(define ((quote-literals literals) stx)
+  (define literal?
+    (curry hash-has-key? literals))
+  (match stx
+    [(? literal?) `(quote ,stx)]
+    [`(quote ,p) stx]
+    [_ (apply-expr (quote-literals literals) stx)]))
+
+
+(define ((process-qq quote-level) stx)
+  (println "process-qq")
+  (println quote-level)
+  (println stx)
+  (when (quote-level . < . 0) (error "bad unquote"))
+  (match stx
+    [(? number?) stx]
+    [`(quote ,x) `(quote ,x)]
+    [`(quasiquote ,x)
+     ((process-qq (add1 quote-level)) x)]
+    [(and (? symbol?))
+     #:when (not (zero? quote-level))
+     `(quote ,stx)]
+    [(list 'unquote x)
+     #:when (equal? 1 quote-level)
+     x]
+    [(list 'unquote x)
+     #:when (quote-level . > . 1)
+     (match ((process-qq (sub1 quote-level)) x)
+       [`(quote ,w) (list 'unquote ((process-qq (sub1 quote-level)) w))]
+       [_ ((process-qq (sub1 quote-level)) x)])
+     ]
+    [(? list?)
+     #:when (not (zero? quote-level))
+     (println "lsit case")
+     (println stx)
+     (println (second stx))
+     
+     (map (process-qq quote-level) stx)]))
+
+#;(define (explicit⋱ stx)
+    (match stx
+      [`(,id ⋱ ,pat)
+       `(p⋱ ,id ,pat)]))
+
+
+(check-equal? ((quote-literals #hash((a . _))) 'a)
+              '(quote a))
+(check-equal? ((quote-literals #hash((a . _))) '(1 a))
+              '(1 (quote a)))
+(check-equal? ((quote-literals #hash((b . _))) '(1 a))
+              '(1 a))
+(check-equal? ((quote-literals #hash((b . _))) '(1 (pcons a b)))
+              '(1 (pcons a (quote b))))
 
 #| desugar-template : stx → stx
  similar to above. not sure if this function will
@@ -393,13 +469,13 @@ to-come:
   #;
   (check-equal?
    (ratch  '(if 1 2 3)
-    [`(if ,a ,b ,c)
-     `(cond [`,a ,b]
-            [else ,c])])
+     [`(if ,a ,b ,c)
+      `(cond [`,a ,b]
+             [else ,c])])
    (match  '(if 1 2 3)
-    [`(if ,a ,b ,c)
-     `(cond [`,a ,b]
-            [else ,c])]))
+     [`(if ,a ,b ,c)
+      `(cond [`,a ,b]
+             [else ,c])]))
   
 
   
