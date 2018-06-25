@@ -23,13 +23,14 @@ currently implemented:
 
 - quote (needs more tests)
 
-- quasiquote/unquote (needs tests)
+- quasiquote/unquote (NON-NESTED)
 
 - simple containment patterns
 
 
 to-come:
 
+- quasiquote/unquote NESTED
 - unquote/splicing?
   not necessary, but for the hell of it?
 
@@ -122,6 +123,7 @@ to-come:
     [(? list?) (map D stx)]
     [_ stx]))
 
+; wip
 (define (apply-expr f stx)
   (match stx
   
@@ -142,7 +144,7 @@ to-come:
     [(? list?) (map f stx)])
   )
 
-
+; wip
 (define ((quote-literals literals) stx)
   (define literal?
     (curry hash-has-key? literals))
@@ -152,6 +154,7 @@ to-come:
     [_ (apply-expr (quote-literals literals) stx)]))
 
 
+; wip
 (define ((process-qq quote-level) stx)
   (println "process-qq")
   (println quote-level)
