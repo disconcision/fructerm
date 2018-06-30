@@ -54,7 +54,6 @@ to-come:
 
 ; temporary forms for annotation patterns
 (provide anno-runtime-match 
-         strip-most-annotations
          desugar-annotation)
 
 
@@ -82,9 +81,9 @@ to-come:
 
     ; annotation patterns
     #;[`(▹ / ,stx)
-     `(p/ ▹ ,(D stx))]
+       `(p/ ▹ ,(D stx))]
     #;[`(_ / ,stx)
-     `(p/ _ ,(D stx))]
+       `(p/ _ ,(D stx))]
     [`(,anns ... / ,stx)
      `(p/ ,(D `(phash ,@anns)) ,(D stx))]
     [`(,ann / ,stx)
@@ -203,17 +202,6 @@ to-come:
      `(p/ () ,(map D stx))]
     ))
 
-(define (strip-most-annotations stx)
-  (define @ strip-most-annotations)
-  (match stx
-    [`(p/ ▹ ,stx)
-     `(▹ ,(@ stx))]
-    [`(p/ ,(hash-table ('▹ _)) ,stx)
-     `(▹ ,(@ stx))]
-    [`(p/ ,ann ,stx)
-     (@ stx)]
-    [(? list?) (map @ stx)]
-    [x x]))
 
 ; wip
 (define (apply-expr f stx)
@@ -430,15 +418,15 @@ to-come:
 
 #| destructure : stx → env
    info forthcoming. see tests |#
-(define/memo* (destructure types c-env arg pat)
+(define/memo* (destructure literals c-env arg pat)
   #;(println `(destructure ,arg ,pat ,c-env))
-  (define D (curry destructure types c-env))
+  (define D (curry destructure literals c-env))
   (define (accumulate-matches pat x acc)
     (bind acc
-          (λ (_) (bind (destructure types #hash() x pat)
+          (λ (_) (bind (destructure literals #hash() x pat)
                        (curry append-hashes acc)))))
   (define constructor-id?
-    (curry hash-has-key? types))
+    (curry hash-has-key? literals))
   (define literal?
     (disjoin number? constructor-id? empty?))
   ; note the empty set case
@@ -459,7 +447,7 @@ to-come:
       `(p/ ,(? hash? ann-arg) ,stx-arg))
      (bind (D ann-arg `(phash ,@pairs))
            (λ (env1)
-             (destructure types env1 stx-arg stx-pat)))]
+             (destructure literals env1 stx-arg stx-pat)))]
     [((list 'phash pairs ... and-val ''...)
       (? hash? ann-arg))
      (bind (D ann-arg `(phash ,@pairs))
@@ -501,7 +489,7 @@ to-come:
             [`(,key ,pat-value)
              (bind (hash-ref ann-arg key 'no-match)
                    (λ (arg-value)
-                     (destructure types env arg-value pat-value)))])]))]
+                     (destructure literals env arg-value pat-value)))])]))]
     [(`(p/ ,ann-pat ,stx-pat) `(p/ ,ann-arg ,stx-arg))
      ; obviously not full generality
      #:when (and (or (symbol? ann-pat)
@@ -537,14 +525,32 @@ to-come:
       `(,first-arg ,rest-arg ...))
      (bind (D (first arg) first-pat)
            (λ (h) (bind (D rest-arg rest-pat)
-                        (curry hash-union h))))]    
+                        ; not sure how duplicates end up in here
+                        ; but they do, somehow, due to annotation patterns
+                        (λ (x)
+                          (hash-union
+                           h x
+                           #:combine/key
+                           (λ (k v1 v2) (if (equal? v1 v2)
+                                            v1
+                                            (error "error")))))
+                        #;(curry hash-union h))))]    
     [(`(p... ,p ,ps)
       (? list?))
      (define/match (greedy arg-init arg-tail)
        [('() _)
         (bind (D arg-tail ps)
               (bind (D `() p)
-                    (curry hash-union)))]
+                    ; see above ...
+                    (λ (x)
+                      (λ (y)
+                        (hash-union
+                         x y
+                         #:combine/key
+                         (λ (k v1 v2) (if (equal? v1 v2)
+                                          v1
+                                          (error "error"))))))
+                    #;(curry hash-union)))]
        [(`(,as ... ,b) `(,cs ...))
         (match (D cs ps)
           ['no-match (greedy as `(,b ,@cs))]
@@ -673,10 +679,6 @@ to-come:
                                     `(p/ ▹ 1))
                 `(p/ ▹ 2))
   
-  (check-equal? (strip-most-annotations
-                 (desugar-annotation
-                  '(▹ / 1)))
-                '(▹ 1))
 
   (define literals
     #hash((app . ())
