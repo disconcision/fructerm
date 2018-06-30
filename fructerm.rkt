@@ -81,8 +81,25 @@ to-come:
 
 
     ; annotation patterns
+    #;[`(▹ / ,stx)
+     `(p/ ▹ ,(D stx))]
+    #;[`(_ / ,stx)
+     `(p/ _ ,(D stx))]
+    [`(,anns ... / ,stx)
+     `(p/ ,(D `(phash ,@anns)) ,(D stx))]
     [`(,ann / ,stx)
      `(p/ ,ann ,(D stx))]
+    [(list 'phash anns ... and-pat '...)
+     `(phash ,@(for/list ([ann anns])
+                 (if (symbol? ann)
+                     `(,ann ,ann)
+                     ann))
+             ,and-pat '...)]
+    [`(phash ,anns ...)
+     `(phash ,@(for/list ([ann anns])
+                 (if (symbol? ann)
+                     `(,ann ,ann)
+                     ann)))]
     
     ; containment patterns
     [`(⋱ ,pat)
@@ -103,7 +120,8 @@ to-come:
    greedily matches pattern a to the initial
    segments of a list|#
     
-    [`(,(and (not 'quote)
+    [`(,(and (not 'phash)
+             (not 'quote)
              (not 'p/)
              (not 'p⋱)
              (not 'p⋱until)
@@ -140,7 +158,8 @@ to-come:
           (not 'p⋱)
           (not 'p⋱until)
           (not 'p...)
-          (not 'pcons))
+          (not 'pcons)
+          (not 'phash))
      (match quote-level
        [0 stx]
        [_ `(quote ,stx)])]
@@ -174,7 +193,8 @@ to-come:
                  'p⋱
                  'p⋱until
                  'p...
-                 'pcons))
+                 'pcons
+                 'phash))
        ,stx ...)
      `(,spec ,@(map D stx))]
 
@@ -187,7 +207,8 @@ to-come:
   (define @ strip-most-annotations)
   (match stx
     [`(p/ ▹ ,stx)
-     ; comment this out
+     `(▹ ,(@ stx))]
+    [`(p/ ,(hash-table ('▹ _)) ,stx)
      `(▹ ,(@ stx))]
     [`(p/ ,ann ,stx)
      (@ stx)]
@@ -292,6 +313,101 @@ to-come:
 
 
   )
+
+
+
+(module+ test
+  (check-equal? (desugar-pattern '(ann1 (ann2 val2) / 0))
+                `(p/ (phash (ann1 ann1) (ann2 val2)) 0))
+
+  (check-equal? (destructure #hash() #hash()
+                             '(p/ #hash((ann1 . 1) (ann2 . 2)) 0)
+                             '(p/ (phash (ann1 ann1) (ann2 val2)) 0))
+                #hash((ann1 . 1) (val2 . 2)))
+
+  (check-equal? (destructure #hash() #hash()
+                             '(p/ #hash((ann1 . 1) (ann2 . 2)) 0)
+                             '(p/ (phash (ann1 ann1)) 0))
+                #hash((ann1 . 1)))
+
+  (check-equal? (destructure #hash() #hash()
+                             '(p/ #hash((ann2 . 2)) 0)
+                             '(p/ (phash (ann1 ann1) (ann2 val2)) 0))
+                'no-match)
+
+  (check-equal? (runtime-match #hash()
+                               `(((p/ (phash (ann1 ann1) (ann2 val2)) 0)
+                                  (p/ (phash (ann2 val2)) 0)))
+                               '(p/ #hash((ann1 . 1) (ann2 . 2)) 0))
+                `(p/ #hash((ann2 . 2)) 0))
+
+  (check-equal? (runtime-match #hash()
+                               `((((ann1 ann1) (ann2 val2) / 0)
+                                  ((ann2 val2) ann1 / 0)))
+                               '(p/ #hash((ann1 . 1) (ann2 . 2)) 0))
+                `(p/ #hash((ann1 . 1) (ann2 . 2)) 0))
+
+  ; note below handling of the non-variable ann2
+  #| need a better way of handling this generally
+     basically if a pair is specified, the first thing
+     should always be interpreted as a literal, and
+     the second thing should be a pattern/template.
+     if a single thing is specified, we want it to
+     expand into (literal pat-var) in patterns,
+     but (literal whatever) in templates. since
+     i dont care about the values for now, i'm
+     going to come back to this later. |#
+  (check-equal? (runtime-match #hash((ann2 . _))
+                               `((((ann1 ann1) (ann2 val2) / 0)
+                                  (ann2 ann1 / 0)))
+                               '(p/ #hash((ann1 . 1) (ann2 . 2)) 0))
+                `(p/ #hash((ann1 . 1) (ann2 . ann2)) 0))
+
+  ; capture rest of hash subpattern:
+  
+  (check-equal? (destructure #hash() #hash()
+                             #hash((ann1 . 2)(ann2 . 2))
+                             '(phash others ...))
+                #hash((others . #hash((ann1 . 2) (ann2 . 2)))))
+
+  (check-equal? (destructure #hash() #hash()
+                             #hash((ann1 . 2)(ann2 . 2))
+                             '(phash (ann1 a) others ...))
+                #hash((a . 2)(others . #hash((ann2 . 2)))))
+
+  (check-equal? (destructure #hash() #hash()
+                             #hash((ann1 . 1) (ann2 . 2))
+                             '(phash (ann2 val) others ...))
+                #hash((val . 2)(others . #hash((ann1 . 1)))))
+
+  (check-equal? (runtime-match #hash()
+                               '(((phash others ...)
+                                  (phash others ...)))
+                               #hash((ann1 . 1) (ann2 . 2)))
+                #hash((ann1 . 1) (ann2 . 2)))
+
+  (check-equal? (runtime-match #hash()
+                               '(((phash (ann1 val) others ...)
+                                  (phash others ...)))
+                               #hash((ann1 . 1) (ann2 . 2)))
+                #hash((ann2 . 2)))
+  
+  (check-equal? (runtime-match #hash()
+                               '(((phash (ann2 val) others ...)
+                                  (phash (ann1 val) others ...)))
+                               #hash((ann1 . 1) (ann2 . 2)))
+                #hash((ann1 . 2)))
+
+  (check-equal? (runtime-match #hash()
+                               '(((phash (ann2 val) others ...)
+                                  (phash (ann4 val) others ...)))
+                               #hash((ann1 . 1) (ann2 . 2) (ann3 . 3)))
+                #hash((ann1 . 1) (ann3 . 3) (ann4 . 2)))
+  
+  )
+
+
+
 ; helpers for destructuring
 
 #| bind : maybe-env → (env → maybe-env) → maybe-env
@@ -306,7 +422,8 @@ to-come:
 (define (append-hashes h1 h2)
   (hash-union
    h1
-   ; must be a better way to do this:
+   ; must be a better way to do this
+   ; which doesnt involve rebuilding the hash
    (make-hash (hash-map h2 (λ (k v) (cons k (list v)))))
    #:combine (λ (a b) (append a b))))
 
@@ -314,7 +431,7 @@ to-come:
 #| destructure : stx → env
    info forthcoming. see tests |#
 (define/memo* (destructure types c-env arg pat)
-  #;(println `(destructure ,arg ,pat))
+  #;(println `(destructure ,arg ,pat ,c-env))
   (define D (curry destructure types c-env))
   (define (accumulate-matches pat x acc)
     (bind acc
@@ -338,6 +455,53 @@ to-come:
      c-env]
 
     ; annotation patterns
+    [(`(p/ (phash ,pairs ...) ,stx-pat)
+      `(p/ ,(? hash? ann-arg) ,stx-arg))
+     (bind (D ann-arg `(phash ,@pairs))
+           (λ (env1)
+             (destructure types env1 stx-arg stx-pat)))]
+    [((list 'phash pairs ... and-val ''...)
+      (? hash? ann-arg))
+     (bind (D ann-arg `(phash ,@pairs))
+           (λ (new-env)
+             #;(println new-env)
+             (define remainder
+               (for/fold ([env ann-arg])
+                         ([pair pairs])
+                 #;(println env)
+                 (match pair
+                   [`(,key ,value)
+                    #;(println `(removing ,key))
+                    (hash-remove env key)])))
+             #;(println remainder)
+             (hash-set new-env and-val remainder)))]
+    [((list 'phash pairs ... and-val '...)
+      (? hash? ann-arg))
+     (bind (D ann-arg `(phash ,@pairs))
+           (λ (new-env)
+             #;(println new-env)
+             (define remainder
+               (for/fold ([env ann-arg])
+                         ([pair pairs])
+                 #;(println env)
+                 (match pair
+                   [`(,key ,value)
+                    #;(println `(removing ,key))
+                    (hash-remove env key)])))
+             #;(println remainder)
+             (hash-set new-env and-val remainder)))]
+    [(`(phash ,pairs ...)
+      (? hash? ann-arg))
+     (for/fold ([env c-env])
+               ([pair pairs])
+       (match env
+         ['no-match 'no-match]
+         [_
+          (match pair
+            [`(,key ,pat-value)
+             (bind (hash-ref ann-arg key 'no-match)
+                   (λ (arg-value)
+                     (destructure types env arg-value pat-value)))])]))]
     [(`(p/ ,ann-pat ,stx-pat) `(p/ ,ann-arg ,stx-arg))
      ; obviously not full generality
      #:when (and (or (symbol? ann-pat)
@@ -397,6 +561,7 @@ to-come:
 #| destructure : literals → env → stx
    info forthcoming. see tests |#
 (define (restructure types env stx)
+  #;(println `(restructure ,types ,env ,stx))
   (define R (curry restructure types env))
   (define (constructor-id? id)
     (hash-has-key? types id))
@@ -420,6 +585,25 @@ to-come:
      ((hash-ref env id) (R arg))]
 
     ; annotation template
+    [`(p/ (phash ,pairs ...) ,stx-tem)
+     `(p/ ,(R `(phash ,@pairs)) ,(R stx-tem))]
+    [(list 'phash pairs ... and-val ''...)
+     ; NOTE HACKY DOUBLE-QUOTE ABOVE!!!!!!!
+     (define pair-hash
+       (for/hash ([pair pairs])
+         (match pair
+           [`(,key ,value)
+            (values key (R value))])))
+     #;(println `(blarg ,(hash-ref env and-val) ,pair-hash))
+     (hash-union (hash-ref env and-val) pair-hash
+                 #:combine/key (λ (k v1 v2) v2))]
+    [`(phash ,pairs ...)
+     #;(println env)
+     (for/hash ([pair pairs])
+       (match pair
+         [`(,key ,value)
+          (values key (R value))]))]
+    
     [`(p/ ,ann-tem ,stx-tem)
      ; obviously not full generality
      #:when (or (symbol? ann-tem)
