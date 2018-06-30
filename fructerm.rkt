@@ -48,11 +48,15 @@ to-come:
 
 ; rewriting internals
 (provide runtime-match ; literals → pattern-templates → stx → stx
-         anno-runtime-match ; temporary form for ann patterns
-         strip-most-annotations
-         annotation-pattern-template-desugar ; temp see above
          destructure   ; stx → env
          restructure)  ; env → stx → stx
+
+
+; temporary forms for annotation patterns
+(provide anno-runtime-match 
+         strip-most-annotations
+         desugar-annotation)
+
 
 ; ratch is a match-like syntactic form
 (provide ratch)
@@ -66,34 +70,19 @@ to-come:
  ellipses literals, into pconses & p...es.
 
  i'll also take the opportunity to introduce
- some of the combinators.|# 
-(define (desugar-pattern stx [quote-level 0])
-  (define D (curryr desugar-pattern quote-level))
+ some of the combinators.|#
+
+(define (desugar-pattern stx)
+  (define D desugar-pattern)
   (match stx
 
     ; don't parse quoted content
     [`(quote ,_) stx]
-    [`(quasiquote ,(and x (not (? list?))))
-     `(quote ,x)]
-    [`(quasiquote ,(? list? xs))
-     #:when (equal? 0 quote-level)
-     (D (map (curryr desugar-pattern (add1 quote-level)) xs))]
-    [(and (? symbol?)
-          #;(not 'quote)
-          #;(not 'quasiquote)
-          #;(note 'unquote)
-          (not 'p/)
-          (not 'p⋱)
-          (not 'p⋱until)
-          (not 'p...)
-          (not 'pcons))
-     (match quote-level
-       [0 stx]
-       [_ `(quote ,stx)])]
-    [(list 'unquote x)
-     ; #:when (quote-level . = . 1)
-     (when (zero? quote-level) (error "bad unquote"))
-     (desugar-pattern x (sub1 quote-level))]
+
+
+    ; annotation patterns
+    [`(,ann / ,stx)
+     `(p/ ,ann ,(D stx))]
     
     ; containment patterns
     [`(⋱ ,pat)
@@ -114,9 +103,8 @@ to-come:
    greedily matches pattern a to the initial
    segments of a list|#
     
-    [`(,(and #;(not 'quote)
+    [`(,(and (not 'quote)
              (not 'p/)
-             (not '▹)
              (not 'p⋱)
              (not 'p⋱until)
              (not 'p...)
@@ -134,6 +122,77 @@ to-come:
     [_ stx]))
 
 
+(define (desugar-qq stx [quote-level 0])
+  (define D (curryr desugar-qq quote-level))
+  (match stx
+
+    [`(quote ,_) stx]
+    [`(quasiquote ,(and x (not (? list?))))
+     `(quote ,x)]
+    [`(quasiquote ,(? list? xs))
+     #:when (equal? 0 quote-level)
+     (D (map (curryr desugar-qq (add1 quote-level)) xs))]
+    [(and (? symbol?)
+          #;(not 'quote)
+          #;(not 'quasiquote)
+          #;(note 'unquote)
+          (not 'p/)
+          (not 'p⋱)
+          (not 'p⋱until)
+          (not 'p...)
+          (not 'pcons))
+     (match quote-level
+       [0 stx]
+       [_ `(quote ,stx)])]
+    [(list 'unquote x)
+     ; #:when (quote-level . = . 1)
+     (when (zero? quote-level) (error "bad unquote"))
+     (desugar-qq x (sub1 quote-level))]
+    
+    ; budget recursion scheme
+    [(? list?) (map D stx)]
+    [_ stx]))
+
+
+(define (desugar-annotation stx)
+  (define D desugar-annotation)
+  (match stx
+    ; annotation patterns
+    
+    [`(,ann / ,stx)
+     `(p/ ,ann ,(D stx))]
+    
+    [`(▹ ,stx)
+     `(p/ ▹ ,(D stx))]
+
+    [(or (? symbol?) (? empty?) (? number?))
+     stx]
+    
+    [`(,(and spec
+             (or 'quote
+                 'p/
+                 'p⋱
+                 'p⋱until
+                 'p...
+                 'pcons))
+       ,stx ...)
+     `(,spec ,@(map D stx))]
+
+    [(? list?)
+     #; (println stx)
+     `(p/ () ,(map D stx))]
+    ))
+
+(define (strip-most-annotations stx)
+  (define @ strip-most-annotations)
+  (match stx
+    [`(p/ ▹ ,stx)
+     ; comment this out
+     `(▹ ,(@ stx))]
+    [`(p/ ,ann ,stx)
+     (@ stx)]
+    [(? list?) (map @ stx)]
+    [x x]))
 
 ; wip
 (define (apply-expr f stx)
@@ -156,44 +215,6 @@ to-come:
     [(? list?) (map f stx)])
   )
 
-
-; at what stage to apply this (qq problem; others?)?
-(define (annotation-pattern-template-desugar stx)
-  (define D annotation-pattern-template-desugar)
-  (match stx
-    ; annotation patterns
-    [(or (? symbol?) (? empty?) (? number?))
-     (println stx)
-     stx]
-    [`(p/ ,attr ,a)
-     `(p/ ,attr ,(D a))]
-    [`(,attr? / ,a)
-     `(p/ ,attr? ,(D a))]
-    #;[`( ,attr / ,stx)
-       (D `(p/ ,attr ,stx))]
-
-    [`(,(and ann (or '> '▹)) ,stx)
-     `(p/ ,ann ,(D stx))]
-    
-    [`(,(and spec (or 'quote
-                      'p/
-                      'p⋱
-                      'p⋱until
-                      'p...
-                      'pcons))
-       ,stx ...)
-     `(,spec ,@(map D stx))]
-
-    [(not (? list?))
-     (println "not list")
-     `(p/ () ,stx)]
-
-    [(? list?) `(p/ () ,(map D stx))]
-
-    #;[_ (println "fall") (println stx)
-         `(p/ () ,(map D stx))]
-
-    ))
 
 
 ; wip
@@ -252,54 +273,6 @@ to-come:
                 '(1 a))
   (check-equal? ((quote-literals #hash((b . _))) '(1 (pcons a b)))
                 '(1 (pcons a (quote b)))))
-
-#| desugar-template : stx → stx
- similar to above. not sure if this function will
- continue to exist. unsure to this point about
- how much i want to enforce pattern/template
- symmetry. right now it's almost identical. |#
-(define (desugar-template stx [quote-level 0])
-  (define D (curryr desugar-pattern quote-level))
-  (match stx
-
-    [`(quote ,_) stx]
-    [`(quasiquote ,(and x (not (? list?))))
-     `(quote ,x)]
-    [`(quasiquote ,(? list? xs))
-     (D (map (curryr desugar-pattern (add1 quote-level)) xs))]
-    [(and (? symbol?)
-          #;(not 'quote)
-          #;(not 'quasiquote)
-          #;(note 'unquote)
-          (not 'p/)
-          (not 'p⋱)
-          (not 'p⋱until)
-          (not 'p...)
-          (not 'pcons))
-     (match quote-level
-       [0 stx]
-       [_ `(quote ,stx)])]
-    [(list 'unquote x)
-     (when (zero? quote-level) (error "bad unquote"))
-     (desugar-pattern x (sub1 quote-level))]
-    
-    [`(,id ⋱ ,pat)
-     (D `(p⋱ ,id ,pat))]
-    [`(,(and (not 'p/)
-             (not 'p⋱)
-             (not 'p...)
-             (not 'pcons)) . ,_)
-     (D (foldr
-         (λ (x acc)
-           (match acc
-             [`(,_ ,(== '...) ,y ,ys ...)
-              `(p... ,x ,y)]
-             [_ `(pcons ,x ,acc)]))
-         '() stx))]
-    #;[`(p/ ,xs ...)
-       `(p/ ,@(map D xs))]
-    [(? list?) (map D stx)]
-    [_ stx]))
 
 
 ; desugar examples
@@ -365,17 +338,12 @@ to-come:
      c-env]
 
     ; annotation patterns
-    #;[(`(p/ > ()) `(p/ > ()))
-       c-env]
-    #;[(`(p/ > ,stx-pat) `(p/ > ,stx-arg))
-       (D stx-arg stx-pat)]
     [(`(p/ ,ann-pat ,stx-pat) `(p/ ,ann-arg ,stx-arg))
      ; obviously not full generality
      #:when (and (or (symbol? ann-pat)
                      (number? ann-pat)
                      (equal? '() ann-pat))
                  (equal? ann-pat ann-arg))
-     #;(println `(D ,stx-arg ,stx-pat))
      (D stx-arg stx-pat)]
 
     ; containment patterns
@@ -462,12 +430,19 @@ to-come:
 
 #| runtime-match : literals → pattern/templates → stx → stx |#
 (define/memo* (runtime-match types pat-tems source)
+  #;(println `(runtime-match ,pat-tems ,source))
   (define new-pat-tems (map runtime-match-rewriter pat-tems))
   (match new-pat-tems
     [`() 'no-match]
-    [`((,(app desugar-pattern pattern)
-        ,(app desugar-template template))
+    [`((,(app (compose desugar-pattern
+                       desugar-qq)
+              pattern)
+        ,(app (compose desugar-pattern
+                       desugar-qq)
+              template))
        ,other-clauses ...)
+     #;(println `(pat-tem-src ,pattern ,template ,source))
+     #;(println `(des ,(destructure types #hash() source pattern)))
      (define env (destructure types #hash() source pattern))
      (if (equal? 'no-match env)
          (runtime-match types other-clauses source)
@@ -478,13 +453,12 @@ to-come:
   (define new-pat-tems (map runtime-match-rewriter pat-tems))
   (match new-pat-tems
     [`() 'no-match]
-    [`((,(app (compose  desugar-pattern  annotation-pattern-template-desugar) pattern)
-        ,(app (compose  desugar-template  annotation-pattern-template-desugar) template))
+    [`((,(app (compose desugar-pattern
+                       desugar-qq
+                       desugar-annotation) pattern)
+        ,(app (compose desugar-pattern
+                       desugar-annotation) template))
        ,other-clauses ...)
-     #;(println "pat tem src")
-     #;(println pattern)
-     #;(println template)
-     #;(println (desugar-template source))
      (define env (destructure types #hash() source pattern))
      (if (equal? 'no-match env)
          (anno-runtime-match types other-clauses source)
@@ -492,53 +466,77 @@ to-come:
 
 (module+ test
   
-  (check-equal? (annotation-pattern-template-desugar '(> / a))
-                '(p/ > a))
+  (check-equal? (desugar-annotation '(▹ / a))
+                '(p/ ▹ a))
 
-  (check-equal? (annotation-pattern-template-desugar '(p/ > 2))
-                '(p/ > 2))
+  (check-equal? (desugar-annotation '(p/ ▹ 2))
+                '(p/ ▹ 2))
 
-  (check-equal? (annotation-pattern-template-desugar '(p/ > (p/ () 2)))
-                '(p/ > (p/ () 2)))
+  (check-equal? (desugar-annotation '(p/ ▹ (p/ () 2)))
+                '(p/ ▹ (p/ () 2)))
 
-  (check-equal? (destructure #hash() #hash() '(p/ > 1) '(p/ > 1))
+  (check-equal? (destructure #hash() #hash() '(p/ ▹ 1) '(p/ ▹ 1))
                 #hash())
 
-  (check-equal? (destructure #hash() #hash() '(p/ > 1) '(p/ > 1))
+  (check-equal? (destructure #hash() #hash() '(p/ ▹ 1) '(p/ ▹ 1))
                 #hash())
 
+  (check-equal? (anno-runtime-match #hash() '(((▹ / 1) (▹ / 1)))
+                                    `(p/ ▹ 1))
+                `(p/ ▹ 1))
   
-  (check-equal? (anno-runtime-match #hash() '(((> / 1) (> / 1)))
-                                    `(> / 1))
-                `(p/ > 1))
-
-  (check-equal? (anno-runtime-match #hash() '(((> / a) (> / 2)))
-                                    `(> / 1))
-                `(p/ > 2))
-  
-  (check-equal? (strip-most-annotations
-                 (annotation-pattern-template-desugar
-                  '(> / 1)))
-                '(> 1))
+  (check-equal? (anno-runtime-match #hash() '(((▹ / a) (▹ / 2)))
+                                    `(p/ ▹ 1))
+                `(p/ ▹ 2))
   
   (check-equal? (strip-most-annotations
-                 (anno-runtime-match #hash() '(((> / a) (> / 2)))
-                                     `(> / 1)))
-                '(> 2)))
+                 (desugar-annotation
+                  '(▹ / 1)))
+                '(▹ 1))
 
-(define (strip-most-annotations stx)
-  (define @ strip-most-annotations)
-  (match stx
-    [`(p/ ▹ ,stx)
-     ; comment this out
-     `(▹ ,(@ stx))]
-    [`(p/ > ,stx)
-     ; comment this out
-     `(> ,(@ stx))]
-    [`(p/ ,ann ,stx)
-     (@ stx)]
-    [(? list?) (map @ stx)]
-    [x #;(println x) x]))
+  (define literals
+    #hash((app . ())
+          (λ . ())
+          (let . ())
+          (pair . ())
+          (◇ . ())
+          (▹ . ())
+          (⊙ . ())
+          (expr . ())))
+
+  (define initial-state
+    '(p/ ()
+         (◇ (p/ ▹
+                (p/ ()
+                    (⊙ expr))))))
+  
+  (check-equal? (anno-runtime-match
+                 literals
+                 '([⋱→
+                    (▹ (⊙ expr))
+                    (app (▹ (⊙ expr)) (⊙ expr))])
+                 initial-state)
+                '(p/ ()
+                     (◇
+                      (p/ ()
+                          (app
+                           (p/ ▹ (p/ () (⊙ expr)))
+                           (p/ () (⊙ expr)))))))
+
+  (check-equal? (anno-runtime-match
+                 literals
+                 '([⋱→
+                    (▹ (⊙ expr))
+                    (▹ 0)])
+                 '(p/ ()
+                      (◇
+                       (p/ ()
+                           (app (p/ ▹ (p/ () (⊙ expr)))
+                                (p/ () (⊙ expr)))))))
+                '(p/ () (◇ (p/ () (app (p/ ▹ 0) (p/ () (⊙ expr)))))))
+
+
+  )
 
 
 #| runtime-match-rewriter : pattern/templates → pattern/templates
