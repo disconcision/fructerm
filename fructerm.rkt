@@ -698,7 +698,7 @@ to-come:
   
   (check-equal? (anno-runtime-match
                  literals
-                 '([⋱→
+                 '([⋱
                     (▹ (⊙ expr))
                     (app (▹ (⊙ expr)) (⊙ expr))])
                  initial-state)
@@ -711,7 +711,7 @@ to-come:
 
   (check-equal? (anno-runtime-match
                  literals
-                 '([⋱→
+                 '([⋱
                     (▹ (⊙ expr))
                     (▹ 0)])
                  '(p/ ()
@@ -729,7 +729,7 @@ to-come:
    an ad-hoc rewriting phase; possible seed for macro system |#
 (define (runtime-match-rewriter pat-tem)
   (match pat-tem
-    [(or `(,a ⋱→ ,b) `(⋱→ ,a ,b))
+    [(or `(,a ⋱ ,b) `(⋱ ,a ,b))
      (let ([ctx (gensym)])
        `((p⋱ ,ctx  ,a) (p⋱ ,ctx ,b)))]
     [_ pat-tem]))
