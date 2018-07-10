@@ -48,6 +48,7 @@ to-come:
 
 ; rewriting internals
 (provide runtime-match ; literals → pattern-templates → stx → stx
+         desugar
          destructure   ; stx → env
          restructure)  ; env → stx → stx
 
@@ -71,8 +72,8 @@ to-come:
  i'll also take the opportunity to introduce
  some of the combinators.|#
 
-(define (desugar-pattern stx)
-  (define D desugar-pattern)
+(define (desugar stx)
+  (define D desugar)
   (match stx
 
     ; don't parse quoted content
@@ -287,16 +288,16 @@ to-come:
 ; desugar examples
 
 (module+ test
-  (check-equal? (desugar-pattern `(a ⋱ 1))
+  (check-equal? (desugar `(a ⋱ 1))
                 '(p⋱ a 1))
 
-  (check-equal? (desugar-pattern `(a ⋱ (until 2) 1))
+  (check-equal? (desugar `(a ⋱ (until 2) 1))
                 '(p⋱until a 2 1))
 
-  (check-equal? (desugar-pattern `(a ⋱ (1 b ...)))
+  (check-equal? (desugar `(a ⋱ (1 b ...)))
                 '(p⋱ a (pcons 1 (p... b ()))))
 
-  (check-equal? (desugar-pattern '(1 2 3 d ... 5 f ... 7 8))
+  (check-equal? (desugar '(1 2 3 d ... 5 f ... 7 8))
                 '(pcons 1 (pcons 2 (pcons 3 (p... d (pcons 5 (p... f (pcons 7 (pcons 8 ())))))))))
 
 
@@ -305,7 +306,7 @@ to-come:
 
 
 (module+ test
-  (check-equal? (desugar-pattern '(ann1 (ann2 val2) / 0))
+  (check-equal? (desugar '(ann1 (ann2 val2) / 0))
                 `(p/ (phash (ann1 ann1) (ann2 val2)) 0))
 
   (check-equal? (destructure #hash() #hash()
@@ -619,34 +620,30 @@ to-come:
 
 
 #| runtime-match : literals → pattern/templates → stx → stx |#
-(define/memo* (runtime-match types pat-tems source)
+(define/memo* (runtime-match literals pat-tems source)
   #;(println `(runtime-match ,pat-tems ,source))
   (define new-pat-tems (map runtime-match-rewriter pat-tems))
   (match new-pat-tems
     [`() 'no-match]
-    [`((,(app (compose desugar-pattern
-                       desugar-qq)
-              pattern)
-        ,(app (compose desugar-pattern
-                       desugar-qq)
-              template))
+    [`((,(app (compose desugar desugar-qq) pattern)
+        ,(app (compose desugar desugar-qq) template))
        ,other-clauses ...)
      #;(println `(pat-tem-src ,pattern ,template ,source))
      #;(println `(des ,(destructure types #hash() source pattern)))
-     (define env (destructure types #hash() source pattern))
+     (define env (destructure literals #hash() source pattern))
      (if (equal? 'no-match env)
-         (runtime-match types other-clauses source)
-         (restructure types env template))]))
+         (runtime-match literals other-clauses source)
+         (restructure literals env template))]))
 
 
 (define/memo* (anno-runtime-match types pat-tems source)
   (define new-pat-tems (map runtime-match-rewriter pat-tems))
   (match new-pat-tems
     [`() 'no-match]
-    [`((,(app (compose desugar-pattern
+    [`((,(app (compose desugar
                        desugar-qq
                        desugar-annotation) pattern)
-        ,(app (compose desugar-pattern
+        ,(app (compose desugar
                        desugar-annotation) template))
        ,other-clauses ...)
      (define env (destructure types #hash() source pattern))
@@ -699,26 +696,26 @@ to-come:
   (check-equal? (anno-runtime-match
                  literals
                  '([⋱
-                    (▹ (⊙ expr))
-                    (app (▹ (⊙ expr)) (⊙ expr))])
+                     (▹ (⊙ expr))
+                     (app (▹ (⊙ expr)) (⊙ expr))])
                  initial-state)
                 '(p/ ()
                      (◇
-                      (p/ ()
-                          (app
-                           (p/ ▹ (p/ () (⊙ expr)))
-                           (p/ () (⊙ expr)))))))
+                       (p/ ()
+                           (app
+                            (p/ ▹ (p/ () (⊙ expr)))
+                            (p/ () (⊙ expr)))))))
 
   (check-equal? (anno-runtime-match
                  literals
                  '([⋱
-                    (▹ (⊙ expr))
-                    (▹ 0)])
+                     (▹ (⊙ expr))
+                     (▹ 0)])
                  '(p/ ()
                       (◇
-                       (p/ ()
-                           (app (p/ ▹ (p/ () (⊙ expr)))
-                                (p/ () (⊙ expr)))))))
+                        (p/ ()
+                            (app (p/ ▹ (p/ () (⊙ expr)))
+                                 (p/ () (⊙ expr)))))))
                 '(p/ () (◇ (p/ () (app (p/ ▹ 0) (p/ () (⊙ expr)))))))
 
 
@@ -761,7 +758,7 @@ to-come:
 
   (define (test-destr source pattern)
     (destructure #hash() #hash()
-                 source (desugar-pattern pattern)))
+                 source (desugar pattern)))
 
   
   ; destructure literal/variable tests
@@ -978,7 +975,7 @@ to-come:
   (define contain-test
     (λ (source pattern)
       (destructure #hash() #hash()
-                   source (desugar-pattern pattern))))
+                   source (desugar pattern))))
 
   (check-equal? ((hash-ref (contain-test
                             '(1)
