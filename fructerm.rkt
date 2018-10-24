@@ -1,6 +1,7 @@
 #lang racket
 
 (require racket/hash
+         "fructerm-common.rkt"
          memoize)
 
 (module+ test
@@ -108,6 +109,8 @@ to-come:
      (D `(p⋱until _ ,?-pat ,pat))]
     [`(,id ⋱ ,pat)
      (D `(p⋱ ,id ,pat))]
+    [`(,id ⋱+ ,pat)
+     (D `(p⋱+ ,id ,pat))]
     [`(,id ⋱ (until ,?-pat) ,pat)
      (D `(p⋱until ,id ,?-pat ,pat))]
 
@@ -124,6 +127,7 @@ to-come:
              (not 'quote)
              (not 'p/)
              (not 'p⋱)
+             (not 'p⋱+)
              (not 'p⋱until)
              (not 'p...)
              (not 'pcons)) . ,_)
@@ -140,6 +144,7 @@ to-come:
     [_ stx]))
 
 
+; quasiquotation desugaring (this is WIP)
 (define (desugar-qq stx [quote-level 0])
   (define D (curryr desugar-qq quote-level))
   (match stx
@@ -156,6 +161,7 @@ to-come:
           #;(note 'unquote)
           (not 'p/)
           (not 'p⋱)
+          (not 'p⋱+)
           (not 'p⋱until)
           (not 'p...)
           (not 'pcons)
@@ -191,6 +197,7 @@ to-come:
              (or 'quote
                  'p/
                  'p⋱
+                 'p⋱+
                  'p⋱until
                  'p...
                  'pcons
@@ -238,35 +245,35 @@ to-come:
 
 
 ; wip
-(define ((process-qq quote-level) stx)
-  (println "process-qq")
-  (println quote-level)
-  (println stx)
-  (when (quote-level . < . 0) (error "bad unquote"))
-  (match stx
-    [(? number?) stx]
-    [`(quote ,x) `(quote ,x)]
-    [`(quasiquote ,x)
-     ((process-qq (add1 quote-level)) x)]
-    [(and (? symbol?))
-     #:when (not (zero? quote-level))
-     `(quote ,stx)]
-    [(list 'unquote x)
-     #:when (equal? 1 quote-level)
-     x]
-    [(list 'unquote x)
-     #:when (quote-level . > . 1)
-     (match ((process-qq (sub1 quote-level)) x)
-       [`(quote ,w) (list 'unquote ((process-qq (sub1 quote-level)) w))]
-       [_ ((process-qq (sub1 quote-level)) x)])
-     ]
-    [(? list?)
-     #:when (not (zero? quote-level))
-     (println "lsit case")
-     (println stx)
-     (println (second stx))
+#;(define ((process-qq quote-level) stx)
+    (println "process-qq")
+    (println quote-level)
+    (println stx)
+    (when (quote-level . < . 0) (error "bad unquote"))
+    (match stx
+      [(? number?) stx]
+      [`(quote ,x) `(quote ,x)]
+      [`(quasiquote ,x)
+       ((process-qq (add1 quote-level)) x)]
+      [(and (? symbol?))
+       #:when (not (zero? quote-level))
+       `(quote ,stx)]
+      [(list 'unquote x)
+       #:when (equal? 1 quote-level)
+       x]
+      [(list 'unquote x)
+       #:when (quote-level . > . 1)
+       (match ((process-qq (sub1 quote-level)) x)
+         [`(quote ,w) (list 'unquote ((process-qq (sub1 quote-level)) w))]
+         [_ ((process-qq (sub1 quote-level)) x)])
+       ]
+      [(? list?)
+       #:when (not (zero? quote-level))
+       (println "lsit case")
+       (println stx)
+       (println (second stx))
      
-     (map (process-qq quote-level) stx)]))
+       (map (process-qq quote-level) stx)]))
 
 #;(define (explicit⋱ stx)
     (match stx
@@ -290,6 +297,9 @@ to-come:
 (module+ test
   (check-equal? (desugar `(a ⋱ 1))
                 '(p⋱ a 1))
+
+  (check-equal? (desugar `(a ⋱+ 1))
+                '(p⋱+ a 1))
 
   (check-equal? (desugar `(a ⋱ (until 2) 1))
                 '(p⋱until a 2 1))
