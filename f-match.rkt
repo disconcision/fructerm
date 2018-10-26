@@ -6,7 +6,7 @@
 
 #|
 
-   FRUCTERM/F-MATCH
+   FRUCTERM/MATCH
 
    this library implements several match-expanders which
    can be required seperately and used with racket/match
@@ -15,7 +15,7 @@
    to ergonomically support matching with these matchers
 
 
-   CONTAINMENT PATTERNS
+   1. CONTAINMENT PATTERNS
 
    ⋱ and ⋱+ are match-expanders which implement
    containment patterns. these descend into an s-expression
@@ -24,7 +24,7 @@
    f-match extends racket match with infix syntax for ⋱
 
 
-   HASH + ANNOTATION PATTERNS
+   2. HASH + ANNOTATION PATTERNS
 
    /# and /#+ implement an alternate syntax for capturing
    hash patterns, intended to be used with attributed
@@ -51,42 +51,40 @@
 
     this macher preorder-traverses an s-expression,
     matching on the first instance of <pattern>
+
+    ACTUALLY: currently, the instance must be unique
+    still deciding on the semantics here
+
   |#
 
 
   ; ⋱ finds
-  (check-equal? (f/match `(0 1 2 3)
-                  [(⋱ 1) #t])
-                #t)
+  (check-true (f/match `(0 1 2 3)
+                [(⋱ 1) #t]))
 
   ; ⋱ fails
-  (check-equal? (f/match `(0 0 2 3)
-                  [(⋱ 1) #t]
-                  [_ #f])
-                #f)
+  (check-true (f/match `(0 0 2 3)
+                [(not (⋱ 1)) #t]))
   
-  ; ⋱ decends '(1 (2 4 5) 3)
-  (check-equal? (f/match `(0 (0 1) 2 3)
-                  [(⋱ 1) #t])
-                #t)
+  ; ⋱ decends
+  (check-true (f/match `(0 (0 1) 2 3)
+                [(⋱ 1) #t]))
 
+  ; ⋱ finds a UNIQUE match
+  (check-true (f/match `(0 1 1)
+                [(not (⋱ 1)) #t]))
+
+  
   ; ⋱ does nothing
   (check-equal? (f/match `(0 1 2 3)
                   [(⋱ a) a])
                 `(0 1 2 3))
   
-  ; ⋱ finds arbitary patterns
+  ; ⋱ finds arbitrary patterns
   (check-equal? (f/match `(0 (1 zap) 2 3)
                   [(⋱ `(1 ,a)) a])
                 `zap)
 
-  ; ⋱ finds the first match
-  ; BUG???
-  #;(check-equal? (f/match `(0 (zap 1) (zap 2))
-                    [(⋱ `(zap ,a)) a]
-                    [_ #f])
-                  1)
-  
   ; ⋱ works top-down
   (check-equal? (f/match `(zap (0 (zap 3)))
                   [(⋱ `(zap ,a)) a])
@@ -155,49 +153,18 @@
                   [(c ⋱ 1 ...) (c ⋱ '(3 4 5 6) ...)])
                 '(0 3 (0 4 (5 0)) 0 6))
 
+  #|
+
+    we can use this with a nested match to rewrite
+    the captured sub-patterns as a list:
+
+  |#
+
   (check-equal? (f/match '(0 1 (0 1 (1 (▹ 0))) 0 1)
                   [(c ⋱ (and a (or `(▹ ,_) (? number?))) ...)
                    (c ⋱ (match a [`(,x ... (▹ ,y) ,z ,w ...)
                                   `(,@x ,y (▹ ,z) ,@w)]) ...)])
                 '(0 1 (0 1 (1 0)) (▹ 0) 1))
-
-  (check-equal? (f/match '(0 1 (0 1 (1 (▹ 0))) 0 1)
-                  [(c ⋱ (capture-when (or `(▹ ,_) (? number?)))
-                      `(,x ... (▹ ,y) ,z ,w ...))
-                   (c ⋱
-                      `(,@x ,y (▹ ,z) ,@w) ...)])
-                '(0 1 (0 1 (1 0)) (▹ 0) 1))
-
-  
-  #|
-
-    extended forms
-
-    IMPLEMENTATION IN PROGRESS
-    THESE ARE COMPLETELY UNSTABLE
-    RUN
-
-    (<context-id> ⋱ <pattern> ...)
-
-    (<context-id> ⋱ <pattern> ... -> <pattern> ooo)
-
-    (<context-id> ⋱ (until-capture <capture-pat> ...) <pattern>)
-    (<context-id> ⋱ (until <until-pat>)) <pattern>)
-  |#
-
-
-  
-
-  ; multiple containment pattern tests
-
-
-  ; #goals
-  #;(check-equal? (f/match '(0 1 (0 1 (1 (▹ 0))) 0 1)
-                    [(c ⋱ #:capture-when (or `(▹ ,_) (? number?))
-                        x ... `(▹ ,y) z w ...)
-                     (c ⋱
-                        x ... ,y `(▹ ,z) w ...)])
-                  '(0 1 (0 1 (1 0)) (▹ 0) 1))
 
   (check-equal? (f/match '(0 (s 1) (2 (s (▹ 3)) (4 5)) (s 6) 7)
                   [(c ⋱ (and a `(s ,_)) ...)
@@ -205,6 +172,32 @@
                                   `(,@x (s ,y) (s (▹ ,z)) ,@w)]) ...)])
                 '(0 (s 1) (2 (s 3) (4 5)) (s (▹ 6)) 7))
 
+  #|
+
+    (<context-id> ⋱ (capture-when <when-pattern>) <list-pattern>)
+
+    this generalization captures all matches on when-pattern
+    and the matches the list of results against <list-pattern>
+
+  |#
+
+  ; moving a cursor to the next atom
+  (check-equal? (f/match '(0 1 (0 1 (1 (▹ 0))) 0 1)
+                  [(c ⋱ (capture-when (or `(▹ ,_) (? number?)))
+                      `(,x ... (▹ ,y) ,z ,w ...))
+                   (c ⋱
+                      `(,@x ,y (▹ ,z) ,@w) ...)])
+                '(0 1 (0 1 (1 0)) (▹ 0) 1))
+
+  ; #goals?
+  #;(check-equal? (f/match '(0 1 (0 1 (1 (▹ 0))) 0 1)
+                    [(c ⋱ #:capture-when (or `(▹ ,_) (? number?))
+                        x ... `(▹ ,y) z w ...)
+                     (c ⋱
+                        x ... ,y `(▹ ,z) w ...)])
+                  '(0 1 (0 1 (1 0)) (▹ 0) 1))
+
+  ; toy scope-aware subtitution
   (check-equal? (f/match `(let ([w 1])
                             z
                             (let ([z 2])
@@ -220,6 +213,17 @@
                      z)
                    (let ([y 3])
                      new-name)))
+  
+  #|
+
+    notes on extended forms:
+
+    TODO: use optionals to combine when-capture and until
+ 
+    INVESTIGATE:  other syntax options for when-capture
+    (<context-id> ⋱ <pattern> ... -> <pattern> ooo)
+
+  |#
 
   )
 
@@ -252,7 +256,9 @@
     [(f/match source pairs ...)
      (let ([new-pairs (map rewrite-pairs (syntax->datum #'(pairs ...)))])
        (with-syntax ([(newest-pairs ...) (datum->syntax stx new-pairs)])
-         #'(match source newest-pairs ...)))]))
+         #'(match source newest-pairs ...
+             [_ (displayln `(f/match-error source newest-pairs ...))
+                (error "f-match error")])))]))
 
 
 (define-for-syntax (rewrite-pairs stx)
@@ -357,7 +363,8 @@
               (for/list ([ann (syntax->datum #'(anns ...))])
                 (if (symbol? ann)
                     `(,(list 'quote ann) ,ann)
-                    `(,(first ann) . ,(rewriter (rest ann)))#;ann))]) ; kind of a hack (also see below) for selection-list
+                    `(,(first ann) . ,(rewriter (rest ann)))#;ann))])
+         ; above is kind of a hack (also see below) for selection-list
          (with-syntax ([(newest-anns ...) (datum->syntax stx new-anns)])
            #'(hash-table newest-anns ...)))]))
   (λ (stx)
@@ -368,7 +375,8 @@
                      (for/list ([ann (syntax->datum #'(anns ...))])
                        (if (symbol? ann)
                            `(,(list 'quote ann) ,ann)
-                           `(,(first ann) . ,(rewriter (rest ann))))))]) ; hack see above
+                           `(,(first ann) . ,(rewriter (rest ann))))))])
+         ; above is hack see above
          (with-syntax ([(newest-anns ...) (datum->syntax stx new-anns)])
            #'(hash newest-anns ...)))])))
 
