@@ -542,14 +542,18 @@ to-come:
      (match-define (list ctx contents)
        (multi-containment matcher xs))
      #;(println `(find-pat ,find-pat ctx ,ctx contents ,contents))
-     (define sub-env
-       (for/fold ([env c-env])
+     (define new-env (hash-set c-env
+                               context-name ctx))
+     #;(define list-of-hashes
+       (map (λ (x) (D x find-pat)) contents))
+     
+     (define newer-env
+       (for/fold ([env new-env])
                  ([c contents]
                   #;[x xs])
-         (hash-union env (D c find-pat))))
-     (define new-env (hash-set sub-env
-                               context-name ctx))
-     new-env]
+         (append-hashes env (D c find-pat))))
+     
+     newer-env]
     
     ; list and ellipses patterns
     [(`(pcons ,first-pat ,rest-pat)
@@ -623,7 +627,7 @@ to-come:
 
     ; wip
     [`(p⋱+ ,(? symbol? id) ,arg)
-     0]
+     (apply (hash-ref env id) (map R arg))]
 
     ; annotation template
     [`(p/ (phash ,pairs ...) ,stx-tem)
@@ -1087,6 +1091,12 @@ to-come:
   (check-equal? (runtime-match #hash() '(((a ...) (a ...))) '(1 2))
                 '(1 2))
 
+  ; BUG!!!! returns '(0 (1 2)). Need to change restructuring approach
+  ; possibly destructuring approach, for both ... and ⋱+
+  #;
+  (check-equal? (runtime-match #hash() '(((a ...) ((0 a) ...))) '(1 2))
+                '((0 1) (0 2)))
+
 
   ; integration tests: ellipses restructuring
   
@@ -1128,10 +1138,30 @@ to-come:
   ; multi-containment pattern tests
 
   (check-equal? ((hash-ref (contain-test
+                            '(0 1)
+                            '(a ⋱+ 1))
+                           'a)
+                 2)
+                '(0 2))
+
+  (check-equal? ((hash-ref (contain-test
                             '(0 1 1)
                             '(a ⋱+ 1))
                            'a)
                  2 3)
                 '(0 2 3))
+
+  #;
+  (check-equal? (runtime-match #hash()
+                               '(((a ⋱+ (0 b))
+                                  (a ⋱+ ((1 b)))))
+                               '(0 (0 2) 0))
+                '(0 (1 2) 0))
+  #;
+  (check-equal? (runtime-match #hash()
+                               '(((a ⋱+ (0 b))
+                                  (a ⋱+ (1 b))))
+                               '(0 (0 2) (0 3)))
+                '(0 (1 2) (1 3)))
   
   )
