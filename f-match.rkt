@@ -58,7 +58,7 @@
   |#
 
 
-  ; ⋱ finds
+  ; ⋱ finds left-to-write
   (check-true (f/match `(0 1 2 3)
                 [(⋱ 1) #t]))
 
@@ -70,7 +70,7 @@
   (check-true (f/match `(0 (0 1) 2 3)
                 [(⋱ 1) #t]))
 
-  ; ⋱ finds a UNIQUE match
+  ; ⋱ insists on a UNIQUE match
   (check-true (f/match `(0 1 1)
                 [(not (⋱ 1)) #t]))
 
@@ -225,6 +225,25 @@
 
   |#
 
+  #;(define (temp x)
+    (f/match x
+      [(c ⋱ (capture-when (or `(Pair ,_ ,_) (? number?)))
+          `(,x ,xs ...))
+       (c ⋱
+          `((▹ ,x) ,@xs))]
+      [w w]))
+  
+  #;(check-equal? (f/match `(▹ (Pair (Pair 1 2) (Pair 3 4)))
+                  [(c ⋱ `(▹ ,(and a (app temp b))))
+                   #:when (not (equal? a b))
+                   (println `(trig ,b))
+                   (c ⋱ b)]
+                  [(c ⋱ (capture-when (app temp (or `(▹ ,_) (? number?))))
+                      `(,x ... (▹ ,y) ,z ,w ...))
+                   (c ⋱
+                      `(,@x ,y (▹ ,z) ,@w) ...)]
+                  [0 0])
+                `(Pair (▹ (Pair 1 2)) (Pair 3 4)))
   )
 
 

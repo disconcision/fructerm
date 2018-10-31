@@ -512,7 +512,10 @@ to-come:
     ; containment patterns
     [(`(p⋱ ,context-name ,(app (curry D arg) (? hash? new-env)))
       _) ; should this be (? list?) ?
-     (hash-union new-env (hash-set c-env context-name identity))]
+     (hash-union new-env (hash-set c-env context-name identity)
+                 #:combine/key (λ (k v v1) v))]
+    ; do i actually want to overwrite keys above?
+    ; was getting an error in pre-fructure
     ; the below is exponential without memoization
     [(`(p⋱ ,context-name ,find-pat)
       `(,xs ...))
@@ -530,6 +533,23 @@ to-come:
         (hash-set new-env context-name
                   (compose (λ (x) `(,@is ,x ,@ts))
                            (hash-ref new-env context-name)))])]
+    [(`(p⋱+ ,context-name ,find-pat)
+      `(,xs ...))
+     (define (matcher stx)
+       (match (D stx find-pat)
+         ['no-match #f]
+         [_ #t]))
+     (match-define (list ctx contents)
+       (multi-containment matcher xs))
+     #;(println `(find-pat ,find-pat ctx ,ctx contents ,contents))
+     (define sub-env
+       (for/fold ([env c-env])
+                 ([c contents]
+                  #;[x xs])
+         (hash-union env (D c find-pat))))
+     (define new-env (hash-set sub-env
+                               context-name ctx))
+     new-env]
     
     ; list and ellipses patterns
     [(`(pcons ,first-pat ,rest-pat)
@@ -600,6 +620,10 @@ to-come:
     ; containment templates
     [`(p⋱ ,(? symbol? id) ,arg)
      ((hash-ref env id) (R arg))]
+
+    ; wip
+    [`(p⋱+ ,(? symbol? id) ,arg)
+     0]
 
     ; annotation template
     [`(p/ (phash ,pairs ...) ,stx-tem)
@@ -1100,4 +1124,14 @@ to-come:
                 '(0 (1 2) 0))
 
   ; todo: more examples!
+
+  ; multi-containment pattern tests
+
+  (check-equal? ((hash-ref (contain-test
+                            '(0 1 1)
+                            '(a ⋱+ 1))
+                           'a)
+                 2 3)
+                '(0 2 3))
+  
   )
