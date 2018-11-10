@@ -1,8 +1,12 @@
 #lang racket
 
 
-(provide f/match ⋱ ⋱+ /# /#+)
+(provide f/match
+         f/match-lambda
+         f/match-lambda?
+         ⋱ ⋱+ /# /#+ //)
 
+(provide ⋱t) ;temp
 
 #|
 
@@ -69,11 +73,6 @@
   ; ⋱ decends
   (check-true (f/match `(0 (0 1) 2 3)
                 [(⋱ 1) #t]))
-
-  ; ⋱ insists on a UNIQUE match
-  (check-true (f/match `(0 1 1)
-                [(not (⋱ 1)) #t]))
-
   
   ; ⋱ does nothing
   (check-equal? (f/match `(0 1 2 3)
@@ -90,6 +89,22 @@
                   [(⋱ `(zap ,a)) a])
                 `(0 (zap 3)))
 
+  
+  #|
+
+    pattern : (<context-id> ⋱1 <pattern>)
+
+    finds unique occurence of <pattern>
+
+  |#
+
+  
+  ; ⋱1 insists on a UNIQUE match
+  (check-true (f/match `(0 1 1)
+                [(not (⋱1 1)) #t]))
+  
+
+  
   #|
 
     pattern : (<context-id> ⋱ <pattern>)
@@ -226,24 +241,24 @@
   |#
 
   #;(define (temp x)
-    (f/match x
-      [(c ⋱ (capture-when (or `(Pair ,_ ,_) (? number?)))
-          `(,x ,xs ...))
-       (c ⋱
-          `((▹ ,x) ,@xs))]
-      [w w]))
+      (f/match x
+        [(c ⋱ (capture-when (or `(Pair ,_ ,_) (? number?)))
+            `(,x ,xs ...))
+         (c ⋱
+            `((▹ ,x) ,@xs))]
+        [w w]))
   
   #;(check-equal? (f/match `(▹ (Pair (Pair 1 2) (Pair 3 4)))
-                  [(c ⋱ `(▹ ,(and a (app temp b))))
-                   #:when (not (equal? a b))
-                   (println `(trig ,b))
-                   (c ⋱ b)]
-                  [(c ⋱ (capture-when (app temp (or `(▹ ,_) (? number?))))
-                      `(,x ... (▹ ,y) ,z ,w ...))
-                   (c ⋱
-                      `(,@x ,y (▹ ,z) ,@w) ...)]
-                  [0 0])
-                `(Pair (▹ (Pair 1 2)) (Pair 3 4)))
+                    [(c ⋱ `(▹ ,(and a (app temp b))))
+                     #:when (not (equal? a b))
+                     (println `(trig ,b))
+                     (c ⋱ b)]
+                    [(c ⋱ (capture-when (app temp (or `(▹ ,_) (? number?))))
+                        `(,x ... (▹ ,y) ,z ,w ...))
+                     (c ⋱
+                        `(,@x ,y (▹ ,z) ,@w) ...)]
+                    [0 0])
+                  `(Pair (▹ (Pair 1 2)) (Pair 3 4)))
   )
 
 
@@ -280,6 +295,13 @@
                 (error "f-match error")])))]))
 
 
+(define-syntax-rule (f/match-lambda <pairs> ...)
+  (λ (x) (f/match x <pairs> ...)))
+
+(define-syntax-rule (f/match-lambda? <pat>)
+  (f/match-lambda [<pat> #t] [_ #f]))
+
+
 (define-for-syntax (rewrite-pairs stx)
   ; rewrite the patterns and templates of match 'pairs'
   ; while skipping interstitial content
@@ -300,8 +322,17 @@
      `(⋱ ,(gensym) ,(R pat))]
     [`(,context ⋱ ,pat)
      `(⋱ ,context ,(R pat))]
+    [`(⋱1 ,pat)
+     `(⋱1 ,(gensym) ,(R pat))]
+    [`(,context ⋱1 ,pat)
+     `(⋱1 ,context ,(R pat))]
+    [`(⋱+ ,pat)
+     `(⋱+ ,(gensym) ,(R pat))]
     [(list context '⋱ pat '...)
      `(⋱+ ,context ,(R pat))]
+    [(list context '⋱... pat) ; alternate syntax
+     `(⋱+ ,context ,(R pat))]
+    
     [`(,context ⋱ (capture-when ,x) ,pat)
      `(⋱+ ,context (capture-when ,x) ,(R pat))]
     [`(,context ⋱ (until ,x) ,pat)
@@ -324,13 +355,42 @@
 
 ; CONTAINMENT PATTERNS
 
+
+; temporary form while fixing things
+(define-match-expander ⋱t
+  ; containment pattern (returns first match)
+  (λ (stx)
+    (syntax-case stx ()
+      [(⋱t context-id <internal-pat>)
+       #'(app
+          (curry first-containment (match-lambda? <internal-pat>))
+          `(,context-id (,<internal-pat>)))]))
+  (λ (stx)
+    (syntax-case stx ()
+      [(⋱t context-id internal-template)
+       #'(context-id internal-template)])))
+
+
 (define-match-expander ⋱
   ; containment pattern (returns first match)
   (λ (stx)
     (syntax-case stx ()
       [(⋱ context-id <internal-pat>)
        #'(app
-          (curry multi-containment (match-lambda? <internal-pat>))
+          (curry first-containment (f/match-lambda? <internal-pat>))
+          `(,context-id (,<internal-pat>)))]))
+  (λ (stx)
+    (syntax-case stx ()
+      [(⋱ context-id internal-template)
+       #'(context-id internal-template)])))
+
+(define-match-expander ⋱1
+  ; containment pattern (returns first match)
+  (λ (stx)
+    (syntax-case stx ()
+      [(⋱ context-id <internal-pat>)
+       #'(app
+          (curry multi-containment (f/match-lambda? <internal-pat>))
           `(,context-id (,<internal-pat>)))]))
   (λ (stx)
     (syntax-case stx ()
@@ -345,16 +405,16 @@
     (syntax-case stx (capture-when)
       [(⋱+ context-id (capture-when <cond-pat>) <internal-pat>)
        #'(app
-          (curry multi-containment (match-lambda? <cond-pat>))
+          (curry multi-containment (f/match-lambda? <cond-pat>))
           `(,context-id ,<internal-pat>))]
       [(⋱+ context-id (until <cond-pat>) <internal-pat>)
        #'(app
-          (λ (x) (multi-containment (match-lambda? <internal-pat>) x
-                                    (match-lambda? <cond-pat>)))
+          (λ (x) (multi-containment (f/match-lambda? <internal-pat>) x
+                                    (f/match-lambda? <cond-pat>)))
           `(,context-id (,<internal-pat> (... ...))))]
       [(⋱+ context-id <internal-pat>)
        #'(app
-          (curry multi-containment (match-lambda? <internal-pat>))
+          (curry multi-containment (f/match-lambda? <internal-pat>))
           `(,context-id (,<internal-pat> (... ...))))]))
   (λ (stx)
     (syntax-case stx ()
@@ -367,6 +427,57 @@
 
 
 ; ATTRIBUTE HASHES
+
+
+(define-match-expander //
+  (λ (stx)
+    (syntax-case stx (// ...)
+      [(// <anns> ... <rest-ann> (... ...) // <thing>)
+       (let ([new-anns
+              (for/list ([ann (syntax->datum #'(<anns> ...))])
+                (if (symbol? ann)
+                    `(,(list 'quote ann) ,ann)
+                    ann))])
+         (with-syntax ([(newest-anns ...) (datum->syntax stx new-anns)])
+           #'`(p/ ,(hash-table newest-anns ... <rest-ann> (... ...)) ,<thing>)))]
+      [(// <anns> ... // <thing>)
+       (let ([new-anns
+              (for/list ([ann (syntax->datum #'(<anns> ...))])
+                (if (symbol? ann)
+                    `(,(list 'quote ann) ,ann)
+                    ann))])
+         ; above is kind of a hack (also see below) for selection-list
+         (with-syntax ([(newest-anns ...) (datum->syntax stx new-anns)])
+           #'`(p/ ,(hash-table newest-anns ...) ,<thing>)))
+       ]))
+  (λ (stx)
+    (syntax-case stx (// ...)
+      [(// <anns> ... <rest-ann> (... ...) // <thing>)
+       (let ([new-anns
+              (apply append
+                     (for/list ([ann (syntax->datum #'(<anns> ...))])
+                       (if (symbol? ann)
+                           `(,(list 'quote ann) ,ann)
+                           ann)))])
+         (with-syntax ([(newest-anns ...) (datum->syntax stx new-anns)])
+           #'`(p/ ,(hash-union (for/fold ([acc #hash()])
+                                   ([r <rest-ann>])
+                           (match r
+                             [`(,k ,v) (hash-set acc k v)]))
+                         (hash newest-anns ...)
+                         #:combine/key (λ (k v1 v2) (if (equal? v1 v2) v1 v2)))
+                  ,<thing>)))]
+      [(// <anns> ... // <thing>)
+       (let ([new-anns
+              (for/list ([ann (syntax->datum #'(<anns> ...))])
+                (if (symbol? ann)
+                    `(,(list 'quote ann) ,ann)
+                    `(,(first ann) . ,(rest ann))))])
+         ; above is kind of a hack (also see below) for selection-list
+         (with-syntax ([(newest-anns ...) (datum->syntax stx new-anns)])
+           #'`(p/ ,(hash newest-anns ...) ,<thing>)))
+       ])))
+
 
 
 
@@ -409,7 +520,7 @@
               (for/list ([ann (syntax->datum #'(anns ...))])
                 (if (symbol? ann)
                     `(,(list 'quote ann) ,ann)
-                    ann))])
+                    `(,(first ann) . ,(rewriter (rest ann)))))])
          (with-syntax ([(newest-anns ...) (datum->syntax stx new-anns)])
            #'(hash-table newest-anns ... rest-pat (... ...))))]))
   (λ (stx)
@@ -420,7 +531,7 @@
                      (for/list ([ann (syntax->datum #'(anns ...))])
                        (if (symbol? ann)
                            `(,(list 'quote ann) ,ann)
-                           ann)))])
+                           `(,(first ann) . ,(rewriter (rest ann))))))])
          (with-syntax ([(newest-anns ...) (datum->syntax stx new-anns)])
            #'(hash-union (for/fold ([acc #hash()])
                                    ([r rest-pat])
@@ -446,6 +557,12 @@
   
   (check-equal? (f/match '(p/ #hash( (> . >) (sort . expr)) (p/ #hash((b . 8)) 2))
                   [(> a ... / (b / 2))
+                   a])
+                '((sort expr)))
+
+  ; alternate prefix syntax, no rewrite required
+  (check-equal? (match '(p/ #hash( (> . >) (sort . expr)) (p/ #hash((b . 8)) 2))
+                  [(// > a ... // (// b // 2))
                    a])
                 '((sort expr)))
 

@@ -545,7 +545,7 @@ to-come:
      (define new-env (hash-set c-env
                                context-name ctx))
      #;(define list-of-hashes
-       (map (λ (x) (D x find-pat)) contents))
+         (map (λ (x) (D x find-pat)) contents))
      
      (define newer-env
        (for/fold ([env new-env])
@@ -1096,6 +1096,21 @@ to-come:
   #;
   (check-equal? (runtime-match #hash() '(((a ...) ((0 a) ...))) '(1 2))
                 '((0 1) (0 2)))
+
+
+  ; notes on trying to fix this:
+  #; (match '(0 0 1 0 0 0)
+       [`(,a ... 1 ,b ...)
+        `((x ,a ,(y b) ...) ...)])
+  #; (match '(0 0 1 0 0 0)
+       [(p... a (pcons 1 (p... b '())))
+        (p... (pcons 'x (pcons a (p... (pcons y (pcons b '()))'())))'())])
+  #; (match '(0 0 1 0 0 0)
+       [`(,a ... 1 ,b ...)
+        `(,@(map (λ (a) `(x ,a ,@(map (λ (b) `(y ,b)) b))) a))])
+  #; (match '(0 0 1 0 0 0)
+       [`(,a ... 1 ,b ...)
+        `((x ,a ,(y b) ...) ...)])
 
 
   ; integration tests: ellipses restructuring
